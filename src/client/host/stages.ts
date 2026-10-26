@@ -69,7 +69,7 @@ export function lobbyStage(game: GameState, options: StageOptions): string {
 				<h1 class="ax-logo"><span>워크샵</span><b>비시바시</b></h1>
 				<div class="ax-join__qr">${joinQr()}</div>
 				<p class="ax-join__url">${esc(location.host)}</p>
-				<p class="ax-join__hint ax-blink">폰 카메라로 찍고 내 이름을 누르세요</p>
+				<p class="ax-join__hint ax-blink">폰 카메라로 찍고 이름을 눌러요</p>
 			</div>
 			<div class="ax-lobby__side">
 				<h2 class="ax-section-title">입장 <b>${joined}</b> / ${game.players.length}</h2>

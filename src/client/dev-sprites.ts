@@ -100,7 +100,7 @@ function mountLab(box: HTMLElement, gameId: GameId, kind: string, freezeAt: numb
 	const tail = 2500;
 
 	function start(): void {
-		box.innerHTML = `<section class="play dev-play" data-game="${gameId}">
+		box.innerHTML = `<section class="play ax-play dev-play" data-game="${gameId}">
 			<header class="play__top"><span class="badge">연습</span><span class="play__title">${esc(info.title)}</span><span class="play__timer">${(info.durationMs / 1000).toFixed(1)}</span></header>
 			<div class="play__stage"></div>
 			<div class="play__overlay" role="status"></div>
