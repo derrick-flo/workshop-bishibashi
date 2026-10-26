@@ -80,8 +80,37 @@ export const arcade = {
 		slide(900, 120, 120, "square", 0.05);
 	},
 	whoosh: () => noise(300, 0.05, 900),
-	fire: () => notes([1047, 1568], 50, "square", 0.07),
 	fanfare: () => notes([523, 659, 784, 1047, 784, 1047, 1319, 1568], 105, "square", 0.05),
 	reveal: () => slide(660, 990, 60, "square", 0.03),
 	drum: () => noise(90, 0.12, 600),
+	/** 칼로 베기 */
+	slash: () => {
+		noise(90, 0.08, 4500);
+		slide(900, 260, 90, "square", 0.035);
+	},
+	/** 보스 등장 */
+	roar: () => {
+		slide(220, 60, 520, "sawtooth", 0.08);
+		noise(450, 0.08, 500);
+	},
+	/** 한 칸 오르기. 계단이면 더 높게, level(0~1)이 높을수록(높이 오를수록) 음이 올라간다 */
+	step: (up: boolean, level: number) =>
+		slide((up ? 520 : 380) + level * 300, (up ? 820 : 420) + level * 300, up ? 70 : 45, "square", 0.03),
+	/** 순서 기억하기의 칸마다 다른 음: 빨강·초록·파랑·FINISH 순으로 도·미·솔·높은 도 */
+	tone: (index: number) => {
+		const hz = [523, 659, 784, 1047][index] ?? 523;
+		slide(hz, hz, 220, "square", 0.05);
+	},
+	/** 땅 파기: 흙 소리 뒤에 금 소리. 금이 많을수록 높게 울린다 */
+	dig: (gold: number) => {
+		noise(70, 0.09, 2000);
+		slide(700 + gold * 80, 900 + gold * 80, 80, "square", 0.035, 50);
+	},
+	/** 표적이 튀어 오름 */
+	blip: () => slide(1400, 1800, 35, "square", 0.02),
+	/** 보스를 때림 */
+	hit: () => {
+		noise(80, 0.12, 900);
+		slide(320, 140, 80, "square", 0.05);
+	},
 };

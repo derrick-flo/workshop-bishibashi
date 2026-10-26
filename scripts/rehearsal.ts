@@ -13,7 +13,7 @@ import { needsHostKey } from "../src/host-access";
 import type { ClientMessage, ServerMessage } from "../src/protocol";
 
 const PLAYER_COUNT = 30;
-const FULL_PLAN: readonly GameId[] = ["balloon", "candy", "eye", "reaction", "balloon", "eye"];
+const FULL_PLAN: readonly GameId[] = ["balloon", "candy", "eye", "grill", "balloon", "eye"];
 const base = process.argv.find((arg) => arg.startsWith("http")) ?? "http://localhost:8787";
 const wsBase = base.replace(/^http/, "ws");
 const roundsArg = process.argv.find((arg) => arg.startsWith("--rounds="));

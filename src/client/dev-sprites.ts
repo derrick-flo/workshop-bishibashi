@@ -12,12 +12,17 @@ import type { Button } from "../domain/games/button";
 import { CANDY, candyTargets } from "../domain/games/candy";
 import { GAME_IDS, GAMES, type GameId } from "../domain/games/catalog";
 import { EYE, EYE_BUTTON, eyeDirections } from "../domain/games/eye";
-import { reactionSignals } from "../domain/games/reaction";
+import { GRILL, GRILL_SLOTS, grillCookTimes } from "../domain/games/grill";
+import { JUDGE, judgeBouts, VERDICT_BUTTON, verdictOf } from "../domain/games/judge";
+import { MONSTER, monsterQueue } from "../domain/games/monster";
+import { shootingTargets, TARGET_BUTTON } from "../domain/games/shooting";
+import { STAIRS, stairsCourse } from "../domain/games/stairs";
 import { createController } from "./controller";
 import { applyCrispUnits } from "./crisp";
 import { esc } from "./dom";
 import { MOUNTS } from "./games";
 import { mountDemo } from "./games/demo";
+import { DEMO_SCRIPTS, SEED as DEMO_SEED } from "./games/demo-scripts";
 import { GAME_ART } from "./games/art";
 import { BIG, SMALL, text } from "./pixel/font";
 import { C, HEX } from "./pixel/palette";
@@ -27,7 +32,8 @@ import { unlockSound } from "./sound";
 type Step = readonly [number, Button];
 
 const params = new URLSearchParams(location.search);
-const SEED = 20261026;
+/** 시연과 같은 seed: 따로 시나리오가 없는 게임은 시연 대본으로 돌려 본다 */
+const SEED = DEMO_SEED;
 
 function balloonScript(kind: string): readonly Step[] {
 	const count = kind === "burst" ? BALLOON.burstPumps : BALLOON.fullPumps + 2;
@@ -60,9 +66,80 @@ function candyScript(kind: string): readonly Step[] {
 	return steps.filter(([at]) => at < CANDY.durationMs);
 }
 
-/** 실제 폰처럼 입력 시각에 소수가 섞이게 하고, 2회차는 미리 눌러 실격, 3회차는 신호 뒤 0.05초(너무 빨라 실격) */
-function reactionScript(): readonly Step[] {
-	return reactionSignals(SEED).map((signal, i): Step => [i === 1 ? signal - 400 : i === 2 ? signal + 50.3 : signal + 180.6 + i * 40, "red"]);
+/** 맨 앞 몬스터와 같은 색을 누르고(일곱 번째는 일부러 틀린다) 드래곤은 FINISH 연타 */
+function monsterScript(): readonly Step[] {
+	const steps: Step[] = [];
+	let t = 400;
+	monsterQueue(SEED).forEach((color, i) => {
+		if (i === 6) {
+			steps.push([t, color === "red" ? "blue" : "red"]);
+			t += MONSTER.lockMs + 200;
+		}
+		steps.push([t, color]);
+		t += 280;
+	});
+	for (let i = 0; i < MONSTER.dragonHp; i++) {
+		steps.push([t, "finish"]);
+		t += 110;
+	}
+	return steps;
+}
+
+/** 이긴 쪽 버튼을 누르고, 일곱 판에 한 번은 일부러 틀린다 */
+function judgeScript(): readonly Step[] {
+	const bouts = judgeBouts(SEED);
+	const steps: Step[] = [];
+	let t = 500;
+	let index = 0;
+	for (let i = 0; i < 40 && t < JUDGE.durationMs; i++) {
+		const right = VERDICT_BUTTON[verdictOf(bouts[index] ?? { left: "rock", right: "rock" })];
+		const wrongTurn = i % 7 === 4;
+		steps.push([t, wrongTurn ? (right === "red" ? "blue" : "red") : right]);
+		if (!wrongTurn) index++;
+		t += wrongTurn ? JUDGE.lockMs + 250 : 450;
+	}
+	return steps;
+}
+
+/** 표적이 뜨고 0.3초쯤 뒤 같은 버튼으로 쏜다. 다섯 번째는 다른 버튼, 열 번째는 쏘지 않고 보낸다 */
+function shootingScript(): readonly Step[] {
+	return shootingTargets(SEED).flatMap((target, i): Step[] => {
+		if (i === 9) return [];
+		const right = TARGET_BUTTON[target.color];
+		return [[target.at + 300 + (i % 3) * 40.5, i === 4 ? (right === "red" ? "blue" : "red") : right]];
+	});
+}
+
+/** 칸에 맞는 버튼으로 오르고(평지는 빨강·파랑 번갈아), 열한 번째 칸에서 한 번 틀려 넘어진다 */
+function stairsScript(): readonly Step[] {
+	const steps: Step[] = [];
+	let t = 400;
+	stairsCourse(SEED).forEach((step, i) => {
+		if (i === 10) {
+			steps.push([t, step === "stair" ? "red" : "green"]);
+			t += STAIRS.fallMs + 150;
+		}
+		steps.push([t, step === "stair" ? "green" : i % 2 === 0 ? "red" : "blue"]);
+		t += 260;
+	});
+	return steps;
+}
+
+/** 칸마다 알맞게 익으면 집는다. 두 번째 고기는 일부러 일찍(덜 익음), 네 번째는 늦게(탐) 집는다 */
+function grillScript(): readonly Step[] {
+	const cookTimes = grillCookTimes(SEED);
+	const steps: Step[] = [];
+	for (const slot of GRILL_SLOTS) {
+		let placedAt: number = GRILL.firstAt[slot];
+		for (const [piece, cookMs] of cookTimes[slot].entries()) {
+			const late = cookMs + GRILL.goodMs + 900;
+			const at = placedAt + (piece === 1 ? cookMs * 0.5 : piece === 3 ? late : cookMs + 150 + (piece % 2) * 120);
+			if (at >= GRILL.durationMs) break;
+			steps.push([at, slot]);
+			placedAt = at + GRILL.refillMs;
+		}
+	}
+	return steps.sort((a, b) => a[0] - b[0]);
 }
 
 function scriptFor(gameId: GameId, kind: string): readonly Step[] {
@@ -73,10 +150,19 @@ function scriptFor(gameId: GameId, kind: string): readonly Step[] {
 			return candyScript(kind);
 		case "eye":
 			return eyeAnswers();
-		case "reaction":
-			return reactionScript();
+		case "monster":
+			return monsterScript();
+		case "judge":
+			return judgeScript();
+		case "shooting":
+			return shootingScript();
+		case "stairs":
+			return stairsScript();
+		case "grill":
+			return grillScript();
 		default:
-			return [];
+			// 따로 시나리오가 없는 게임은 게임 설명 시연 대본으로 돌려 본다
+			return DEMO_SCRIPTS[gameId]?.steps ?? [];
 	}
 }
 

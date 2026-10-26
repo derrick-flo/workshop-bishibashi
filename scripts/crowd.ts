@@ -7,7 +7,7 @@
  */
 import { readFileSync } from "node:fs";
 import type { GameState, Round } from "../src/domain/game";
-import { GAMES, type GameId } from "../src/domain/games/catalog";
+import { GAME_IDS, GAMES, type GameId } from "../src/domain/games/catalog";
 import { needsHostKey } from "../src/host-access";
 import type { ClientMessage, ServerMessage } from "../src/protocol";
 
@@ -15,7 +15,7 @@ const base = process.argv.find((arg) => arg.startsWith("http")) ?? "http://local
 const wsBase = base.replace(/^http/, "ws");
 const countArg = process.argv.find((arg) => arg.startsWith("--count="));
 const COUNT = Math.max(1, Math.min(99, Number(countArg?.split("=")[1] ?? 29)));
-const DEFAULT_PLAN: readonly GameId[] = ["balloon", "candy", "eye", "reaction"];
+const DEFAULT_PLAN: readonly GameId[] = GAME_IDS;
 
 if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(base) && !process.argv.includes("--allow-remote")) {
 	console.error(`${base} 는 localhost가 아니에요. 명단과 기록을 덮어쓰니 정말 하려면 --allow-remote 를 붙이세요.`);
@@ -43,8 +43,24 @@ function plausibleScore(gameId: GameId): number {
 			return randomInt(1, 6) * 100_000 + randomInt(0, 19_000);
 		case "eye":
 			return randomInt(6, 30) * 100_000 + randomInt(0, 14_000);
-		case "reaction":
-			return roll < 0.1 ? randomInt(200, 500) : 1000 - randomInt(180, 420);
+		case "monster":
+			return roll < 0.3 ? randomInt(10, 39) : 1000 + randomInt(50, 600);
+		case "judge":
+			return randomInt(8, 30) * 100_000 + randomInt(0, 14_000);
+		case "shooting": {
+			const hits = randomInt(8, 20);
+			return hits * 100_000 + hits * randomInt(300, 700);
+		}
+		case "stairs":
+			return roll < 0.4 ? randomInt(15, 39) : 1000 + randomInt(50, 500);
+		case "grill":
+			return randomInt(4, 15) * 100_000 + randomInt(0, 19_000);
+		case "memory":
+			return roll < 0.1 ? 0 : randomInt(3, 7) * 100_000 + randomInt(0, 9_000);
+		case "cups":
+			return randomInt(2, 6) * 100_000 + randomInt(0, 6_000);
+		case "treasure":
+			return roll < 0.1 ? 0 : randomInt(10, 80) * 100_000 + randomInt(0, 15_000);
 		default:
 			return Math.floor(Math.random() * Math.floor(GAMES[gameId].maxScore / 3));
 	}

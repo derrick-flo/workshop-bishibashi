@@ -4,7 +4,14 @@ import { BALLOON_START, balloonPress } from "../src/domain/games/balloon";
 import { CANDY_START, candyPress, candyTargets } from "../src/domain/games/candy";
 import { GAME_IDS, GAMES } from "../src/domain/games/catalog";
 import { EYE_START, eyeDirections, eyePress } from "../src/domain/games/eye";
-import { REACTION, reactionPress, reactionSignals, reactionStart } from "../src/domain/games/reaction";
+import { CUPS_START, cupRounds, cupsPress } from "../src/domain/games/cups";
+import { GRILL_START, grillCookTimes, grillPress } from "../src/domain/games/grill";
+import { JUDGE_START, judgeBouts, judgePress } from "../src/domain/games/judge";
+import { MEMORY_START, memoryPress, memorySequence } from "../src/domain/games/memory";
+import { MONSTER_START, monsterPress, monsterQueue } from "../src/domain/games/monster";
+import { SHOOTING_START, shootingPress, shootingTargets } from "../src/domain/games/shooting";
+import { STAIRS_START, stairsCourse, stairsPress } from "../src/domain/games/stairs";
+import { bombDepths, TREASURE_START, treasurePress } from "../src/domain/games/treasure";
 
 function script(id: keyof typeof DEMO_SCRIPTS): DemoScript {
 	const found = DEMO_SCRIPTS[id];
@@ -58,10 +65,98 @@ describe("시연 대본", () => {
 		expect(state.correct).toBe(demo.steps.length - 1);
 	});
 
-	it("결투는 두 판 모두 신호 뒤에 눌러 명중한다", () => {
-		const demo = script("reaction");
-		const signals = reactionSignals(demo.seed);
-		const state = demo.steps.reduce((s, [t]) => reactionPress(s, signals, t), reactionStart(signals.length));
-		expect(state.results.slice(0, 2).every((record) => record !== null && record < REACTION.penaltyMs)).toBe(true);
+	it("몬스터는 한 번만 틀리고, 모두 쓰러뜨린 뒤 드래곤까지 깬다", () => {
+		const demo = script("monster");
+		const queue = monsterQueue(demo.seed);
+		let misses = 0;
+		const state = demo.steps.reduce((s, [t, button]) => {
+			const next = monsterPress(s, queue, button, t);
+			if (next !== s && next.event?.kind === "miss") misses++;
+			return next;
+		}, MONSTER_START);
+		expect(misses).toBe(1);
+		expect(state.clearedAt).not.toBeNull();
+	});
+
+	it("가위바위보 판정은 한 번만 틀리고 나머지는 맞힌다", () => {
+		const demo = script("judge");
+		const bouts = judgeBouts(demo.seed);
+		let misses = 0;
+		const state = demo.steps.reduce((s, [t, button]) => {
+			const next = judgePress(s, bouts, button, t);
+			if (next !== s && next.event?.kind === "miss") misses++;
+			return next;
+		}, JUDGE_START);
+		expect(misses).toBe(1);
+		expect(state.correct).toBe(demo.steps.length - 1);
+	});
+
+	it("권총 속사는 한 발만 빗나가고 나머지는 명중한다", () => {
+		const demo = script("shooting");
+		const targets = shootingTargets(demo.seed);
+		const state = demo.steps.reduce((s, [t, button]) => shootingPress(s, targets, button, t), SHOOTING_START);
+		expect(state.shots).toHaveLength(demo.steps.length);
+		expect(state.shots.filter((shot) => !shot.hit)).toHaveLength(1);
+	});
+
+	it("계단은 한 번 넘어지고 나머지는 한 칸씩 오른다", () => {
+		const demo = script("stairs");
+		const course = stairsCourse(demo.seed);
+		let falls = 0;
+		const state = demo.steps.reduce((s, [t, button]) => {
+			const next = stairsPress(s, course, button, t);
+			if (next !== s && next.event?.kind === "fall") falls++;
+			return next;
+		}, STAIRS_START);
+		expect(falls).toBe(1);
+		expect(state.position).toBe(demo.steps.length - 1);
+	});
+
+	it("삼겹살은 한 번만 덜 익게 집고 나머지는 알맞게 집는다", () => {
+		const demo = script("grill");
+		const cookTimes = grillCookTimes(demo.seed);
+		const kinds: string[] = [];
+		const state = demo.steps.reduce((s, [t, button]) => {
+			const next = grillPress(s, cookTimes, button, t);
+			if (next !== s && next.event !== null) kinds.push(next.event.kind);
+			return next;
+		}, GRILL_START);
+		expect(kinds.filter((kind) => kind === "raw")).toHaveLength(1);
+		expect(state.good).toBe(demo.steps.length - 1);
+	});
+
+	it("순서 기억하기는 한 번 틀린 뒤 다시 보고 맞혀 4개까지 기억한다", () => {
+		const demo = script("memory");
+		const sequence = memorySequence(demo.seed);
+		let misses = 0;
+		const state = demo.steps.reduce((s, [t, button]) => {
+			const next = memoryPress(s, sequence, button, t);
+			if (next !== s && next.event?.kind === "miss") misses++;
+			return next;
+		}, MEMORY_START);
+		expect(misses).toBe(1);
+		expect(state.best).toBe(4);
+	});
+
+	it("야바위는 한 판만 틀리고 나머지는 맞힌다", () => {
+		const demo = script("cups");
+		const rounds = cupRounds(demo.seed);
+		const state = demo.steps.reduce((s, [t, button]) => cupsPress(s, rounds, button, t), CUPS_START);
+		expect(state.round).toBe(demo.steps.length);
+		expect(state.correct).toBe(demo.steps.length - 1);
+	});
+
+	it("보물 캐기는 두 번 금고에 넣고, 한 번은 욕심내다 폭탄을 만난다", () => {
+		const demo = script("treasure");
+		const bombs = bombDepths(demo.seed);
+		const kinds: string[] = [];
+		const state = demo.steps.reduce((s, [t, button]) => {
+			const next = treasurePress(s, bombs, button, t);
+			if (next !== s && next.event !== null) kinds.push(next.event.kind);
+			return next;
+		}, TREASURE_START);
+		expect(kinds.filter((kind) => kind === "bank")).toHaveLength(2);
+		expect(kinds.filter((kind) => kind === "bomb")).toHaveLength(1);
+		expect(state.vault).toBeGreaterThan(0);
 	});
 });

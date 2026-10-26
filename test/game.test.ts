@@ -126,7 +126,7 @@ describe("순서표", () => {
 	it("끝난 라운드의 게임은 바꿀 수 없고 그 뒤만 바꾼다", () => {
 		const twoDone = playRound(playRound(lobbyWith(["p1"], ["eye", "balloon", "candy"]), { p1: 1 }), { p1: 1 });
 		expect(lockedPlanLength(twoDone)).toBe(2);
-		expect(ok(setPlan(twoDone, ["reaction", "reaction"])).plan).toEqual(["eye", "balloon", "reaction", "reaction"]);
+		expect(ok(setPlan(twoDone, ["grill", "grill"])).plan).toEqual(["eye", "balloon", "grill", "grill"]);
 	});
 
 	it("게임 중이거나 결과 발표 중이면 진행 중인 라운드까지 잠근다", () => {

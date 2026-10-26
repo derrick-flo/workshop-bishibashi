@@ -1,4 +1,5 @@
 import { EMPTY_GAME, type GameState } from "../domain/game";
+import { isGameId } from "../domain/games/catalog";
 import type { Player } from "../domain/player";
 
 const PHASES: ReadonlySet<string> = new Set(["lobby", "intro", "playing", "results", "finished"]);
@@ -14,14 +15,30 @@ function isPlayer(value: unknown): value is Player {
 }
 
 /**
- * 저장해 둔 상태를 불러온다. 지금 형식이면 그대로 쓰고,
+ * 이제 없는 게임(예: 빠진 총잡이 결투)을 걸러 낸다. 순서표에서는 빼고,
+ * 진행 중이던 라운드(설명·게임·결과)가 그 게임이면 그 라운드만 취소한다(확정 기록은 남긴다).
+ * 확정한 라운드에 그 게임이 있으면 기록을 맞출 수 없으니 기록은 비우고 명단·입장과 순서표만 살린다.
+ */
+function withoutRemovedGames(saved: GameState): GameState {
+	const plan = saved.plan.filter(isGameId);
+	if (!saved.history.every((round) => isGameId(round.gameId))) return { ...EMPTY_GAME, players: saved.players, plan };
+	const phase = saved.phase;
+	const current =
+		phase.kind === "playing" || phase.kind === "results" ? phase.round.gameId : phase.kind === "intro" ? saved.plan[saved.history.length] : undefined;
+	const cancelled = current !== undefined && !isGameId(current);
+	if (!cancelled && plan.length === saved.plan.length) return saved;
+	return { ...saved, plan, phase: cancelled ? { kind: "lobby" } : phase };
+}
+
+/**
+ * 저장해 둔 상태를 불러온다. 지금 형식이면 없어진 게임만 걸러 그대로 쓰고,
  * 예전(탈락전) 형식이면 명단과 입장만 살려 처음 상태로 둔다. 알아볼 수 없으면 빈 상태.
  */
 export function restoreGame(raw: unknown): GameState {
 	if (!isFields(raw) || !Array.isArray(raw.players)) return EMPTY_GAME;
 	const isCurrent =
 		Array.isArray(raw.plan) && Array.isArray(raw.history) && isFields(raw.phase) && PHASES.has(String(raw.phase.kind));
-	if (isCurrent) return raw as GameState;
+	if (isCurrent) return withoutRemovedGames(raw as GameState);
 	const players = raw.players.filter(isPlayer).map(({ id, name, claimed }): Player => ({ id, name, claimed }));
 	return { ...EMPTY_GAME, players };
 }

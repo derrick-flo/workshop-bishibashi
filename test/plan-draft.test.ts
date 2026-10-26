@@ -6,7 +6,7 @@ const draft: readonly GameId[] = ["eye", "balloon", "candy"];
 
 describe("editDraft", () => {
 	it("게임을 뒤에 넣는다", () => {
-		expect(editDraft(draft, "plan-add", -1, "reaction")).toEqual(["eye", "balloon", "candy", "reaction"]);
+		expect(editDraft(draft, "plan-add", -1, "grill")).toEqual(["eye", "balloon", "candy", "grill"]);
 	});
 
 	it("빼고, 위아래로 옮긴다", () => {

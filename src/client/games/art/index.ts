@@ -3,8 +3,15 @@ import type { Bitmap } from "../../pixel/bitmap";
 import { toSvg } from "../../pixel/svg";
 import { BALLOON_ICON } from "./balloon";
 import { CANDY_ICON } from "./candy";
-import { DUEL_ICON } from "./duel";
+import { CUPS_ICON } from "./cups";
 import { EYE_ICON } from "./eye";
+import { GRILL_ICON } from "./grill";
+import { JUDGE_ICON } from "./judge";
+import { MEMORY_ICON } from "./memory";
+import { MONSTER_ICON } from "./monster";
+import { SHOOTING_ICON } from "./shooting";
+import { STAIRS_ICON } from "./stairs";
+import { TREASURE_ICON } from "./treasure";
 
 export type GameArt = {
 	/** 16×16 아이콘 */
@@ -19,7 +26,14 @@ export const GAME_ART: Readonly<Partial<Record<GameId, GameArt>>> = {
 	balloon: { icon: BALLOON_ICON },
 	candy: { icon: CANDY_ICON },
 	eye: { icon: EYE_ICON },
-	reaction: { icon: DUEL_ICON },
+	monster: { icon: MONSTER_ICON },
+	judge: { icon: JUDGE_ICON },
+	shooting: { icon: SHOOTING_ICON },
+	stairs: { icon: STAIRS_ICON },
+	grill: { icon: GRILL_ICON },
+	memory: { icon: MEMORY_ICON },
+	cups: { icon: CUPS_ICON },
+	treasure: { icon: TREASURE_ICON },
 };
 
 /** 게임 아이콘 HTML. 그림이 없는 게임은 이모지로 대신한다. */
