@@ -1,16 +1,15 @@
 import { GAMES, type GameId } from "./games/catalog";
-import type { Player, PlayerId, PlayerStatus, Scores } from "./player";
-import { decideCut } from "./ranking";
+import type { Player, PlayerId, Scores } from "./player";
 
 export const ROUND_TIMING = {
 	/** 시작을 누른 뒤 게임이 열리기까지(준비 + 3·2·1) */
 	leadMs: 4000,
-	/** 게임이 끝난 뒤 기록을 더 기다리는 시간(느린 와이파이 대비) */
-	graceMs: 4000,
+	/** 게임이 끝난 뒤 기록을 더 기다리는 시간(느린 와이파이, 끊겼다 다시 붙는 폰 대비) */
+	graceMs: 8000,
 } as const;
 
-/** 진행자가 미리 골라 둔 다음 라운드. 폰과 앞 화면에 미리 보여준다. */
-export type Upcoming = { readonly gameId: GameId; readonly cutCount: number };
+/** 순서표에 넣을 수 있는 라운드 수 */
+export const PLAN_LIMIT = 30;
 
 export type Round = {
 	readonly no: number;
@@ -20,7 +19,14 @@ export type Round = {
 	readonly playAt: number;
 	readonly endAt: number;
 	readonly deadlineAt: number;
-	readonly cutCount: number;
+	readonly participantIds: readonly PlayerId[];
+	readonly scores: Scores;
+};
+
+/** 확정한 라운드. 순위와 점수는 기록에서 다시 계산한다(standings.ts). */
+export type RoundResult = {
+	readonly no: number;
+	readonly gameId: GameId;
 	readonly participantIds: readonly PlayerId[];
 	readonly scores: Scores;
 };
@@ -28,35 +34,37 @@ export type Round = {
 export type Phase =
 	| { readonly kind: "lobby" }
 	| { readonly kind: "playing"; readonly round: Round }
-	| { readonly kind: "results"; readonly round: Round; readonly cutIds: readonly PlayerId[] }
-	| { readonly kind: "finished"; readonly winnerIds: readonly PlayerId[] };
+	/** 기록 받기를 끝내고 순위를 보여주는 중. 진행자가 확정하면 기록에 쌓인다. */
+	| { readonly kind: "results"; readonly round: Round }
+	/** 최종 순위 발표 */
+	| { readonly kind: "finished" };
 
 export type GameState = {
 	readonly players: readonly Player[];
+	/** 라운드별 게임 순서. 앞의 lockedPlanLength개는 이미 했거나 하는 중이라 바꿀 수 없다. */
+	readonly plan: readonly GameId[];
+	readonly history: readonly RoundResult[];
 	readonly phase: Phase;
-	/** 탈락까지 확정한 라운드 수 */
-	readonly roundsPlayed: number;
-	readonly upcoming: Upcoming | null;
 };
 
 export type Rejection =
 	| "wrong_phase"
-	| "roster_locked"
 	| "unknown_player"
 	| "already_claimed"
 	| "not_claimed"
-	| "no_upcoming"
+	| "plan_too_long"
+	| "no_next_game"
 	| "not_enough_players"
-	| "invalid_cut"
 	| "wrong_round"
 	| "not_participant"
 	| "already_submitted"
 	| "too_late"
-	| "invalid_score";
+	| "invalid_score"
+	| "nothing_played";
 
 export type Transition = { readonly ok: true; readonly state: GameState } | { readonly ok: false; readonly reason: Rejection };
 
-export const EMPTY_GAME: GameState = { players: [], phase: { kind: "lobby" }, roundsPlayed: 0, upcoming: null };
+export const EMPTY_GAME: GameState = { players: [], plan: [], history: [], phase: { kind: "lobby" } };
 
 const accept = (state: GameState): Transition => ({ ok: true, state });
 const reject = (reason: Rejection): Transition => ({ ok: false, reason });
@@ -65,22 +73,15 @@ function findPlayer(state: GameState, playerId: PlayerId): Player | null {
 	return state.players.find((player) => player.id === playerId) ?? null;
 }
 
-function updatePlayers(state: GameState, ids: readonly PlayerId[], change: (player: Player) => Player): readonly Player[] {
-	return state.players.map((player) => (ids.includes(player.id) ? change(player) : player));
+function setClaimed(state: GameState, playerId: PlayerId, claimed: boolean): GameState {
+	return { ...state, players: state.players.map((player) => (player.id === playerId ? { ...player, claimed } : player)) };
 }
 
-function aliveIds(players: readonly Player[]): readonly PlayerId[] {
-	return players.filter((player) => player.status === "alive").map((player) => player.id);
-}
-
-/** 명단을 바꾼다. 남은 이름은 입장·생존 상태를 그대로 두고, 새 이름에만 새 id를 준다. */
+/** 명단을 바꾼다. 남은 이름은 입장 상태를 그대로 두고, 새 이름에만 새 id를 준다. 라운드 사이에만 할 수 있다. */
 export function setRoster(state: GameState, names: readonly string[], newId: () => PlayerId): Transition {
-	if (state.roundsPlayed > 0) return reject("roster_locked");
 	if (state.phase.kind !== "lobby") return reject("wrong_phase");
 	const cleaned = [...new Set(names.map((name) => name.trim()).filter((name) => name.length > 0))];
-	const players = cleaned.map(
-		(name): Player => state.players.find((player) => player.name === name) ?? { id: newId(), name, claimed: false, status: "lobby" },
-	);
+	const players = cleaned.map((name): Player => state.players.find((player) => player.name === name) ?? { id: newId(), name, claimed: false });
 	return accept({ ...state, players });
 }
 
@@ -88,56 +89,61 @@ export function claim(state: GameState, playerId: PlayerId): Transition {
 	const player = findPlayer(state, playerId);
 	if (player === null) return reject("unknown_player");
 	if (player.claimed) return reject("already_claimed");
-	return accept({ ...state, players: updatePlayers(state, [playerId], (p) => ({ ...p, claimed: true })) });
+	return accept(setClaimed(state, playerId, true));
 }
 
-/** 진행자가 입장을 풀어 준다(폰을 바꿨을 때 등). 생존 여부는 그대로 둔다. */
+/** 진행자가 입장을 풀어 준다(폰을 바꿨을 때 등). 기록은 그대로 둔다. */
 export function release(state: GameState, playerId: PlayerId): Transition {
 	const player = findPlayer(state, playerId);
 	if (player === null) return reject("unknown_player");
 	if (!player.claimed) return reject("not_claimed");
-	return accept({ ...state, players: updatePlayers(state, [playerId], (p) => ({ ...p, claimed: false })) });
+	return accept(setClaimed(state, playerId, false));
 }
 
-/** 다음 라운드에 뛸 사람. 첫 라운드는 입장한 사람 전원, 그 뒤로는 생존자만. */
-export function nextParticipants(state: GameState): readonly Player[] {
-	if (state.roundsPlayed === 0) return state.players.filter((player) => player.claimed && player.status !== "out");
-	return state.players.filter((player) => player.status === "alive");
+/** 순서표에서 바꿀 수 없는 앞부분 길이. 확정한 라운드에 지금 하는 라운드를 더한다. */
+export function lockedPlanLength(state: GameState): number {
+	const inRound = state.phase.kind === "playing" || state.phase.kind === "results";
+	return state.history.length + (inRound ? 1 : 0);
 }
 
-export function prepareRound(state: GameState, gameId: GameId, cutCount: number): Transition {
-	if (state.phase.kind !== "lobby") return reject("wrong_phase");
-	if (!Number.isInteger(cutCount) || cutCount < 0) return reject("invalid_cut");
-	return accept({ ...state, upcoming: { gameId, cutCount } });
+/** 순서표에서 아직 안 한 부분을 upcoming으로 바꾼다. */
+export function setPlan(state: GameState, upcoming: readonly GameId[]): Transition {
+	const plan = [...state.plan.slice(0, lockedPlanLength(state)), ...upcoming];
+	if (plan.length > PLAN_LIMIT) return reject("plan_too_long");
+	return accept({ ...state, plan });
+}
+
+/** 다음 라운드 게임. 순서표를 다 했으면 null */
+export function nextGame(state: GameState): GameId | null {
+	return state.plan[state.history.length] ?? null;
+}
+
+/** 지금 입장해 있는 사람. 라운드를 시작하면 이 사람들이 참가자가 된다. */
+export function joinedPlayers(state: GameState): readonly Player[] {
+	return state.players.filter((player) => player.claimed);
 }
 
 export function startRound(state: GameState, seed: number, now: number): Transition {
 	if (state.phase.kind !== "lobby") return reject("wrong_phase");
-	if (state.upcoming === null) return reject("no_upcoming");
-	const participantIds = nextParticipants(state).map((player) => player.id);
-	// 혼자서도 시작할 수 있다(테스트용). 이때 탈락 인원은 0명만 된다.
+	const gameId = nextGame(state);
+	if (gameId === null) return reject("no_next_game");
+	const participantIds = joinedPlayers(state).map((player) => player.id);
+	// 혼자서도 시작할 수 있다(테스트용)
 	if (participantIds.length === 0) return reject("not_enough_players");
-	if (state.upcoming.cutCount > participantIds.length - 1) return reject("invalid_cut");
 
 	const playAt = now + ROUND_TIMING.leadMs;
-	const endAt = playAt + GAMES[state.upcoming.gameId].durationMs;
+	const endAt = playAt + GAMES[gameId].durationMs;
 	const round: Round = {
-		no: state.roundsPlayed + 1,
-		gameId: state.upcoming.gameId,
+		no: state.history.length + 1,
+		gameId,
 		seed,
 		playAt,
 		endAt,
 		deadlineAt: endAt + ROUND_TIMING.graceMs,
-		cutCount: state.upcoming.cutCount,
 		participantIds,
 		scores: {},
 	};
-	return accept({
-		...state,
-		players: updatePlayers(state, participantIds, (p) => ({ ...p, status: "alive" })),
-		phase: { kind: "playing", round },
-		upcoming: null,
-	});
+	return accept({ ...state, phase: { kind: "playing", round } });
 }
 
 export function submitScore(state: GameState, playerId: PlayerId, roundNo: number, score: number, now: number): Transition {
@@ -156,68 +162,39 @@ export function isRoundComplete(round: Round): boolean {
 	return round.participantIds.every((id) => round.scores[id] !== undefined);
 }
 
-/** 기록 받기를 끝내고 탈락 예정자를 정한다. 확정은 진행자가 따로 한다. */
+/** 기록 받기를 끝내고 순위를 보여준다. 확정은 진행자가 따로 한다. */
 export function closeRound(state: GameState): Transition {
 	if (state.phase.kind !== "playing") return reject("wrong_phase");
-	const { round } = state.phase;
-	return accept({
-		...state,
-		phase: { kind: "results", round, cutIds: decideCut(round.participantIds, round.scores, round.cutCount) },
-	});
+	return accept({ ...state, phase: { kind: "results", round: state.phase.round } });
 }
 
-/** 진행자가 탈락 예정자를 살리거나 다시 탈락 예정으로 돌린다. */
-export function toggleCut(state: GameState, playerId: PlayerId): Transition {
+/** 결과를 확정해 기록에 쌓고 로비로 돌아간다. */
+export function confirmRound(state: GameState): Transition {
 	if (state.phase.kind !== "results") return reject("wrong_phase");
-	const { round, cutIds } = state.phase;
-	if (!round.participantIds.includes(playerId)) return reject("not_participant");
-	const wasCut = cutIds.includes(playerId);
-	const nextCutIds = round.participantIds.filter((id) => (id === playerId ? !wasCut : cutIds.includes(id)));
-	return accept({ ...state, phase: { kind: "results", round, cutIds: nextCutIds } });
+	const { no, gameId, participantIds, scores } = state.phase.round;
+	return accept({ ...state, history: [...state.history, { no, gameId, participantIds, scores }], phase: { kind: "lobby" } });
 }
 
-function phaseAfterRounds(players: readonly Player[]): Phase {
-	const alive = aliveIds(players);
-	return alive.length <= 1 ? { kind: "finished", winnerIds: alive } : { kind: "lobby" };
-}
-
-/** 탈락을 확정한다. 아무도 탈락하지 않았으면(혼자 테스트하거나 모두 살린 경우) 게임을 끝내지 않고 로비로 돌아간다. */
-export function confirmCut(state: GameState): Transition {
-	if (state.phase.kind !== "results") return reject("wrong_phase");
-	const { cutIds } = state.phase;
-	const players = updatePlayers(state, cutIds, (p) => ({ ...p, status: "out" }));
-	const phase: Phase = cutIds.length === 0 ? { kind: "lobby" } : phaseAfterRounds(players);
-	return accept({ ...state, players, roundsPlayed: state.roundsPlayed + 1, phase });
-}
-
-/** 기계 문제 등으로 라운드를 없던 일로 한다. 아무도 탈락하지 않는다. */
+/** 기계 문제 등으로 라운드를 없던 일로 한다. 기록에 남지 않고 같은 게임이 다시 다음 차례가 된다. */
 export function cancelRound(state: GameState): Transition {
 	if (state.phase.kind !== "playing" && state.phase.kind !== "results") return reject("wrong_phase");
 	return accept({ ...state, phase: { kind: "lobby" } });
 }
 
-/** 진행자가 직접 살리거나 탈락시킨다. 라운드 사이에만 할 수 있다. */
-export function setStatus(state: GameState, playerId: PlayerId, status: Exclude<PlayerStatus, "lobby">): Transition {
-	if (state.phase.kind !== "lobby" && state.phase.kind !== "finished") return reject("wrong_phase");
-	if (findPlayer(state, playerId) === null) return reject("unknown_player");
-	const players = updatePlayers(state, [playerId], (p) => ({ ...p, status }));
-	const phase = state.roundsPlayed > 0 ? phaseAfterRounds(players) : state.phase;
-	return accept({ ...state, players, phase });
+/** 최종 순위를 발표한다. 확정한 라운드가 있어야 한다. */
+export function finishGame(state: GameState): Transition {
+	if (state.phase.kind !== "lobby") return reject("wrong_phase");
+	if (state.history.length === 0) return reject("nothing_played");
+	return accept({ ...state, phase: { kind: "finished" } });
 }
 
-/** 입장은 그대로 두고 처음 상태로 돌린다(리허설 뒤 등). */
+/** 최종 발표를 거두고 로비로 돌아간다(잘못 눌렀거나 라운드를 더 할 때). */
+export function reopenGame(state: GameState): Transition {
+	if (state.phase.kind !== "finished") return reject("wrong_phase");
+	return accept({ ...state, phase: { kind: "lobby" } });
+}
+
+/** 입장과 순서표는 그대로 두고 라운드 기록만 지운다(리허설 뒤 등). */
 export function resetGame(state: GameState): GameState {
-	return {
-		players: state.players.map((player) => ({ ...player, status: "lobby" })),
-		phase: { kind: "lobby" },
-		roundsPlayed: 0,
-		upcoming: null,
-	};
-}
-
-/** 라운드마다 30% 정도 떨어뜨리고, 3명 이하면 한 번에 우승자를 가린다. */
-export function suggestCutCount(participantCount: number): number {
-	if (participantCount <= 1) return 0;
-	if (participantCount <= 3) return participantCount - 1;
-	return Math.ceil(participantCount * 0.3);
+	return { ...state, history: [], phase: { kind: "lobby" } };
 }

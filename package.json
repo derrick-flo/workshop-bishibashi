@@ -7,7 +7,8 @@
 		"dev": "wrangler dev",
 		"dev:lan": "wrangler dev --ip 0.0.0.0",
 		"deploy": "wrangler deploy",
-		"build:client": "esbuild src/client/player.ts src/client/host.ts --bundle --format=esm --target=es2022 --minify --sourcemap --outdir=public/js",
+		"build:client": "npm run build:fonts && esbuild src/client/player.ts src/client/host.ts src/client/dev-sprites.ts --bundle --format=esm --target=es2022 --minify --sourcemap --outdir=public/js",
+		"build:fonts": "mkdir -p public/fonts && cp node_modules/galmuri/dist/Galmuri11-Bold.woff2 public/fonts/ && cp node_modules/galmuri/dist/LICENSE.txt public/fonts/Galmuri-LICENSE.txt",
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit && tsc --noEmit -p src/client",
 		"cf-typegen": "wrangler types",
@@ -15,6 +16,7 @@
 	},
 	"devDependencies": {
 		"esbuild": "^0.28.2",
+		"galmuri": "2.40.3",
 		"qrcode-generator": "^2.0.4",
 		"typescript": "^7.0.2",
 		"vitest": "^5.0.5",

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { PLAN_LIMIT } from "../src/domain/game";
 import { isHostMessage, parseClientMessage } from "../src/protocol";
 
 const parse = (value: unknown) => parseClientMessage(JSON.stringify(value));
@@ -13,9 +14,12 @@ describe("parseClientMessage", () => {
 
 	it("진행자 메시지를 해석한다", () => {
 		expect(parse({ type: "setRoster", names: ["김철수", "이영희"] })).toEqual({ type: "setRoster", names: ["김철수", "이영희"] });
-		expect(parse({ type: "prepareRound", gameId: "eye", cutCount: 3 })).toEqual({ type: "prepareRound", gameId: "eye", cutCount: 3 });
-		expect(parse({ type: "setStatus", playerId: "p3", status: "out" })).toEqual({ type: "setStatus", playerId: "p3", status: "out" });
-		expect(parse({ type: "startRound" })).toEqual({ type: "startRound" });
+		expect(parse({ type: "setPlan", gameIds: ["eye", "balloon", "eye"] })).toEqual({ type: "setPlan", gameIds: ["eye", "balloon", "eye"] });
+		expect(parse({ type: "setPlan", gameIds: [] })).toEqual({ type: "setPlan", gameIds: [] });
+		for (const type of ["startRound", "closeRound", "confirmRound", "cancelRound", "finishGame", "reopenGame", "reset"]) {
+			expect(parse({ type })).toEqual({ type });
+		}
+		expect(parse({ type: "release", playerId: "p3" })).toEqual({ type: "release", playerId: "p3" });
 	});
 
 	it("필요한 필드만 남기고 나머지는 버린다", () => {
@@ -29,12 +33,19 @@ describe("parseClientMessage", () => {
 		expect(parse(null)).toBeNull();
 	});
 
+	it("탈락전에서 쓰던 메시지는 더 받지 않는다", () => {
+		for (const type of ["prepareRound", "toggleCut", "confirmCut", "setStatus"]) {
+			expect(parse({ type, playerId: "p1", gameId: "eye", cutCount: 1, status: "out" })).toBeNull();
+		}
+	});
+
 	it("필드 형식이 틀리면 null", () => {
 		expect(parse({ type: "claim", playerId: 1 })).toBeNull();
 		expect(parse({ type: "submit", roundNo: 1, score: "1000" })).toBeNull();
 		expect(parse({ type: "submit", roundNo: 1.5, score: 1000 })).toBeNull();
-		expect(parse({ type: "prepareRound", gameId: "tetris", cutCount: 1 })).toBeNull();
-		expect(parse({ type: "setStatus", playerId: "p1", status: "lobby" })).toBeNull();
+		expect(parse({ type: "setPlan", gameIds: ["tetris"] })).toBeNull();
+		expect(parse({ type: "setPlan", gameIds: "eye" })).toBeNull();
+		expect(parse({ type: "setPlan", gameIds: Array.from({ length: PLAN_LIMIT + 1 }, () => "eye") })).toBeNull();
 		expect(parse({ type: "setRoster", names: "김철수" })).toBeNull();
 		expect(parse({ type: "setRoster", names: ["김철수", 3] })).toBeNull();
 		expect(parse({ type: "setRoster", names: Array.from({ length: 101 }, (_, i) => `사람${i}`) })).toBeNull();
@@ -45,8 +56,11 @@ describe("parseClientMessage", () => {
 describe("isHostMessage", () => {
 	it("진행을 바꾸는 메시지만 진행자 메시지로 본다", () => {
 		expect(isHostMessage({ type: "startRound" })).toBe(true);
+		expect(isHostMessage({ type: "setPlan", gameIds: [] })).toBe(true);
+		expect(isHostMessage({ type: "confirmRound" })).toBe(true);
 		expect(isHostMessage({ type: "release", playerId: "p1" })).toBe(true);
 		expect(isHostMessage({ type: "claim", playerId: "p1" })).toBe(false);
 		expect(isHostMessage({ type: "hello", token: null })).toBe(false);
+		expect(isHostMessage({ type: "submit", roundNo: 1, score: 1 })).toBe(false);
 	});
 });

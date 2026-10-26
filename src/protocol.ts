@@ -1,4 +1,4 @@
-import type { GameState } from "./domain/game";
+import { type GameState, PLAN_LIMIT } from "./domain/game";
 import { type GameId, isGameId } from "./domain/games/catalog";
 import type { PlayerId } from "./domain/player";
 
@@ -11,13 +11,14 @@ export type PlayerMessage =
 /** 진행자 화면 → 서버 */
 export type HostMessage =
 	| { readonly type: "setRoster"; readonly names: readonly string[] }
-	| { readonly type: "prepareRound"; readonly gameId: GameId; readonly cutCount: number }
+	/** 순서표에서 아직 안 한 부분을 통째로 바꾼다 */
+	| { readonly type: "setPlan"; readonly gameIds: readonly GameId[] }
 	| { readonly type: "startRound" }
 	| { readonly type: "closeRound" }
-	| { readonly type: "toggleCut"; readonly playerId: PlayerId }
-	| { readonly type: "confirmCut" }
+	| { readonly type: "confirmRound" }
 	| { readonly type: "cancelRound" }
-	| { readonly type: "setStatus"; readonly playerId: PlayerId; readonly status: "alive" | "out" }
+	| { readonly type: "finishGame" }
+	| { readonly type: "reopenGame" }
 	| { readonly type: "release"; readonly playerId: PlayerId }
 	| { readonly type: "reset" };
 
@@ -48,6 +49,11 @@ function parseNames(value: unknown): readonly string[] | null {
 	return value.every((name) => isText(name, LIMITS.name)) ? (value as string[]) : null;
 }
 
+function parseGameIds(value: unknown): readonly GameId[] | null {
+	if (!Array.isArray(value) || value.length > PLAN_LIMIT) return null;
+	return value.every(isGameId) ? (value as GameId[]) : null;
+}
+
 const PARSERS: Readonly<Record<ClientMessage["type"], (fields: Fields) => ClientMessage | null>> = {
 	hello: ({ token }) => {
 		if (token === null) return { type: "hello", token: null };
@@ -59,15 +65,16 @@ const PARSERS: Readonly<Record<ClientMessage["type"], (fields: Fields) => Client
 		const parsed = parseNames(names);
 		return parsed === null ? null : { type: "setRoster", names: parsed };
 	},
-	prepareRound: ({ gameId, cutCount }) =>
-		isGameId(gameId) && isInteger(cutCount) ? { type: "prepareRound", gameId, cutCount } : null,
+	setPlan: ({ gameIds }) => {
+		const parsed = parseGameIds(gameIds);
+		return parsed === null ? null : { type: "setPlan", gameIds: parsed };
+	},
 	startRound: () => ({ type: "startRound" }),
 	closeRound: () => ({ type: "closeRound" }),
-	toggleCut: ({ playerId }) => (isText(playerId, LIMITS.id) ? { type: "toggleCut", playerId } : null),
-	confirmCut: () => ({ type: "confirmCut" }),
+	confirmRound: () => ({ type: "confirmRound" }),
 	cancelRound: () => ({ type: "cancelRound" }),
-	setStatus: ({ playerId, status }) =>
-		isText(playerId, LIMITS.id) && (status === "alive" || status === "out") ? { type: "setStatus", playerId, status } : null,
+	finishGame: () => ({ type: "finishGame" }),
+	reopenGame: () => ({ type: "reopenGame" }),
 	release: ({ playerId }) => (isText(playerId, LIMITS.id) ? { type: "release", playerId } : null),
 	reset: () => ({ type: "reset" }),
 };
@@ -89,13 +96,13 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
 const HOST_TYPES: ReadonlySet<ClientMessage["type"]> = new Set([
 	"setRoster",
-	"prepareRound",
+	"setPlan",
 	"startRound",
 	"closeRound",
-	"toggleCut",
-	"confirmCut",
+	"confirmRound",
 	"cancelRound",
-	"setStatus",
+	"finishGame",
+	"reopenGame",
 	"release",
 	"reset",
 ]);

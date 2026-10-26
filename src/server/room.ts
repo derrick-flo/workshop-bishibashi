@@ -3,26 +3,30 @@ import {
 	cancelRound,
 	claim,
 	closeRound,
-	confirmCut,
+	confirmRound,
 	EMPTY_GAME,
+	finishGame,
 	type GameState,
 	isRoundComplete,
-	prepareRound,
 	release,
+	reopenGame,
 	resetGame,
+	setPlan,
 	setRoster,
-	setStatus,
 	startRound,
 	submitScore,
-	toggleCut,
 	type Transition,
 } from "../domain/game";
 import type { PlayerId } from "../domain/player";
 import { type HostMessage, isHostMessage, type PlayerMessage, parseClientMessage, type ServerMessage } from "../protocol";
+import { restoreGame } from "./restore";
 import { hashToken, newToken } from "./secrets";
 
 /** Worker가 진행자 키를 확인한 뒤 붙여 주는 헤더. 폰이 보낸 같은 이름의 헤더는 Worker가 덮어쓴다. */
 export const ROLE_HEADER = "x-bishibashi-role";
+
+/** 상태가 잇달아 바뀌면(라운드 끝에 30명이 한꺼번에 기록을 낼 때 등) 이만큼 모았다가 한 번만 보낸다 */
+const BROADCAST_DELAY_MS = 40;
 
 type Role = "host" | "player";
 
@@ -36,13 +40,14 @@ type Claims = Readonly<Record<string, PlayerId>>;
 export class GameRoom extends DurableObject<Env> {
 	private game: GameState = EMPTY_GAME;
 	private claims: Claims = {};
+	private broadcastTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
 		// 폰이 연결 유지용으로 보내는 ping에는 Durable Object를 깨우지 않고 바로 답한다(요금에도 안 잡힌다).
 		ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
 		void ctx.blockConcurrencyWhile(async () => {
-			this.game = (await ctx.storage.get<GameState>("game")) ?? EMPTY_GAME;
+			this.game = restoreGame(await ctx.storage.get("game"));
 			this.claims = (await ctx.storage.get<Claims>("claims")) ?? {};
 		});
 	}
@@ -93,7 +98,7 @@ export class GameRoom extends DurableObject<Env> {
 				const playerId = attachment.role === "player" && message.token !== null ? await this.playerIdOf(message.token) : null;
 				ws.serializeAttachment({ ...attachment, playerId } satisfies Attachment);
 				if (attachment.role === "player") send(ws, { type: "you", playerId, token: null });
-				return this.broadcast(null);
+				return this.scheduleBroadcast();
 			}
 			case "claim": {
 				if (attachment.role !== "player" || attachment.playerId !== null) return send(ws, { type: "rejected", reason: "already_joined" });
@@ -134,20 +139,20 @@ export class GameRoom extends DurableObject<Env> {
 		switch (message.type) {
 			case "setRoster":
 				return setRoster(this.game, message.names, () => crypto.randomUUID());
-			case "prepareRound":
-				return prepareRound(this.game, message.gameId, message.cutCount);
+			case "setPlan":
+				return setPlan(this.game, message.gameIds);
 			case "startRound":
 				return startRound(this.game, crypto.getRandomValues(new Uint32Array(1))[0] ?? 1, Date.now());
 			case "closeRound":
 				return closeRound(this.game);
-			case "toggleCut":
-				return toggleCut(this.game, message.playerId);
-			case "confirmCut":
-				return confirmCut(this.game);
+			case "confirmRound":
+				return confirmRound(this.game);
 			case "cancelRound":
 				return cancelRound(this.game);
-			case "setStatus":
-				return setStatus(this.game, message.playerId, message.status);
+			case "finishGame":
+				return finishGame(this.game);
+			case "reopenGame":
+				return reopenGame(this.game);
 			case "release":
 				return release(this.game, message.playerId);
 			case "reset":
@@ -162,7 +167,16 @@ export class GameRoom extends DurableObject<Env> {
 		if (next.phase.kind === "playing" && !wasPlaying) await this.ctx.storage.setAlarm(next.phase.round.deadlineAt);
 		if (next.phase.kind !== "playing" && wasPlaying) await this.ctx.storage.deleteAlarm();
 		await this.ctx.storage.put({ game: this.game, claims: this.claims });
-		this.broadcast(null);
+		this.scheduleBroadcast();
+	}
+
+	/** 곧 지금 상태를 모두에게 보낸다. 이미 보내기로 했으면 그때 최신 상태가 나간다. */
+	private scheduleBroadcast(): void {
+		if (this.broadcastTimer !== null) return;
+		this.broadcastTimer = setTimeout(() => {
+			this.broadcastTimer = null;
+			this.broadcast(null);
+		}, BROADCAST_DELAY_MS);
 	}
 
 	private async playerIdOf(token: string): Promise<PlayerId | null> {
