@@ -2,8 +2,8 @@ import type { Button } from "../../domain/games/button";
 import { CANDY_START, type CandyState, candyPress, candyScore, candyTargets, currentTarget } from "../../domain/games/candy";
 import { arcade } from "../arcade-sound";
 import { blit, dither, plot, rect } from "../pixel/bitmap";
-import { BIG, label, SMALL, text } from "../pixel/font";
-import { C } from "../pixel/palette";
+import { BIG, cachedLabel, label, SMALL } from "../pixel/font";
+import { C, CLEAR } from "../pixel/palette";
 import { type Particle, sparkle } from "../pixel/particles";
 import { buzz } from "../sound";
 import { CANDY_BALLS, CANDY_COLORS, type CandyValue, LID, MINI_JAR } from "./art/candy";
@@ -68,7 +68,7 @@ export const mountCandy: MountGame = (stage, seed) => {
 		const shown = Math.min(state.completed, 5);
 		for (let i = 0; i < shown; i++) blit(fb, MINI_JAR, 2 + i * 6, COUNTER_Y + 2);
 		if (state.completed > 0) {
-			const count = label(SMALL, `x${state.completed}`, C.y, C.k);
+			const count = cachedLabel(SMALL, `x${state.completed}`, C.y, C.k);
 			blit(fb, count, 3 + shown * 6, COUNTER_Y + 2);
 		}
 	}
@@ -91,7 +91,7 @@ export const mountCandy: MountGame = (stage, seed) => {
 				}
 			}
 			rect(fb, cx - 2, 7 + kick, 4, 2, C.k);
-			const tag = label(SMALL, `+${value}`, C.w, C.k);
+			const tag = cachedLabel(SMALL, `+${value}`, C.w, C.k);
 			blit(fb, tag, cx - Math.floor(tag.w / 2), 9 + kick);
 		}
 	}
@@ -132,7 +132,7 @@ export const mountCandy: MountGame = (stage, seed) => {
 		rect(fb, x + 2, y + 3, 1, JAR.h - 7, C.W);
 		rect(fb, x + 3, y + 3, 1, 4, C.w);
 		// 라벨(목표 개수)
-		const goal = text(BIG, String(jarTarget), C.k);
+		const goal = cachedLabel(BIG, String(jarTarget), C.k, CLEAR);
 		const lw = goal.w + 6;
 		const lx = x + Math.floor((JAR.w - lw) / 2);
 		const ly = y + 7;
@@ -150,7 +150,7 @@ export const mountCandy: MountGame = (stage, seed) => {
 		const height = Math.round((state.count / target()) * FILL.h);
 		const tagY = Math.max(FILL.y - 4, Math.min(FILL.y + FILL.h - 4, FILL.y + FILL.h - height - 4));
 		const done = state.count === target();
-		const number = label(BIG, String(state.count), done ? C.l : C.y, C.k);
+		const number = cachedLabel(BIG, String(state.count), done ? C.l : C.y, C.k);
 		const x = JAR.x + JAR.w + 2;
 		// 화살표
 		plot(fb, x, tagY + 4, C.k);

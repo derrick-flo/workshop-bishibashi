@@ -85,9 +85,15 @@
 	min-height: 0;
 }
 
+/* 안내는 늘 두 줄 높이: 글이 짧아지거나 길어져도 무대(캔버스) 크기가 출렁이지 않게 */
 .ax-hint {
+	display: grid;
+	place-items: center;
 	flex: none;
+	box-sizing: content-box;
+	height: calc(var(--fp2) * 12 * 1.25 * 2);
 	margin: 0;
+	overflow: hidden;
 	padding: calc(var(--px) * 2) 12px calc(var(--px) * 1);
 	color: var(--ax-white);
 	font-family: var(--font-pixel);
@@ -99,8 +105,7 @@
 }
 
 .play__stage.ax-stage > .ax-hint {
-	width: 100%;
-	height: auto;
+	width: auto;
 }
 
 .ax-hint[data-tone="good"] {

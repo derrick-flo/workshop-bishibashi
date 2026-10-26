@@ -121,3 +121,17 @@ export function text(font: Font, value: string, color: number): Bitmap {
 export function label(font: Font, value: string, color: number, edge: number): Bitmap {
 	return edge === CLEAR ? text(font, value, color) : outline(text(font, value, color), edge);
 }
+
+const remembered = new Map<string, Bitmap>();
+const REMEMBER_LIMIT = 300;
+
+/** 매 프레임 그리는 숫자·글자는 한 번 만든 그림을 다시 쓴다(느린 폰에서 프레임마다 새로 만들지 않게) */
+export function cachedLabel(font: Font, value: string, color: number, edge: number): Bitmap {
+	const key = `${font.height}|${value}|${color}|${edge}`;
+	const found = remembered.get(key);
+	if (found !== undefined) return found;
+	if (remembered.size >= REMEMBER_LIMIT) remembered.clear();
+	const art = label(font, value, color, edge);
+	remembered.set(key, art);
+	return art;
+}

@@ -25,8 +25,12 @@ const RESEND_MS = 2000;
 /** 상태를 받을 때마다 다시 보내되 이 간격보다 자주는 보내지 않는다(라운드 끝에 몰릴 때 중복을 줄인다) */
 const MIN_RESEND_GAP_MS = 700;
 
-/** 게임은 끝났는데 아직 서버가 받았다고 확인하지 않은 기록 */
-type Pending = { readonly roundNo: number; readonly score: number };
+/**
+ * 게임은 끝났는데 아직 서버가 받았다고 확인하지 않은 기록.
+ * 라운드 번호만으로는 취소 후 재경기·처음부터 다시 한 라운드와 구분이 안 돼서 시작 시각(playAt)도 같이 본다.
+ */
+type Pending = { readonly roundNo: number; readonly playAt: number; readonly score: number };
+
 
 type View = {
 	readonly game: GameState | null;
@@ -42,6 +46,7 @@ type View = {
 /** 지금 진행 중인 미니게임 한 판. 화면을 다시 그리지 않고 이 안에서만 움직인다. */
 type Run = {
 	readonly roundNo: number;
+	readonly playAt: number;
 	readonly practice: boolean;
 	readonly perfPlayAt: number;
 	readonly durationMs: number;
@@ -80,6 +85,7 @@ let view: View = {
 let run: Run | null = null;
 let painted: string | null = null;
 let pending: Pending | null = readPending();
+const isPendingFor = (round: Pick<Round, "no" | "playAt">) => pending !== null && pending.roundNo === round.no && pending.playAt === round.playAt;
 let resendTimer = 0;
 let ackTimer = 0;
 let lastSubmitAt = Number.NEGATIVE_INFINITY;
@@ -132,7 +138,10 @@ function notify(text: string | null): void {
 function readPending(): Pending | null {
 	try {
 		const raw = store.get(PENDING_KEY);
-		return raw === null ? null : (JSON.parse(raw) as Pending);
+		const value: unknown = raw === null ? null : JSON.parse(raw);
+		if (typeof value !== "object" || value === null) return null;
+		const { roundNo, playAt, score } = value as Record<string, unknown>;
+		return typeof roundNo === "number" && typeof playAt === "number" && typeof score === "number" ? { roundNo, playAt, score } : null;
 	} catch {
 		return null;
 	}
@@ -160,7 +169,7 @@ function flushPending(force: boolean): void {
 	const { game, me } = view;
 	if (pending === null || game === null || me === null) return;
 	const round = game.phase.kind === "playing" || game.phase.kind === "results" ? game.phase.round : null;
-	if (round === null || round.no !== pending.roundNo) {
+	if (round === null || !isPendingFor(round)) {
 		markAck("lost");
 		return setPending(null);
 	}
@@ -237,7 +246,7 @@ function startRun(round: Round, me: Player): void {
 	const practice = !round.participantIds.includes(me.id);
 	const perfPlayAt = performance.now() + (round.playAt - clock.now());
 	// 이미 기록을 냈거나 보내는 중이면 같은 라운드를 다시 하지 않는다(새로고침 등)
-	if (!practice && (round.scores[me.id] !== undefined || pending?.roundNo === round.no)) {
+	if (!practice && (round.scores[me.id] !== undefined || isPendingFor(round))) {
 		return paint(waitScreen("기록을 보냈어요", "다른 사람을 기다리는 중…"));
 	}
 	if (performance.now() > perfPlayAt + info.durationMs) {
@@ -263,6 +272,7 @@ function startRun(round: Round, me: Player): void {
 	pick(root, ".play").append(controller.element);
 	run = {
 		roundNo: round.no,
+		playAt: round.playAt,
 		practice,
 		perfPlayAt,
 		durationMs: info.durationMs,
@@ -344,12 +354,12 @@ function endRun(current: Run): void {
 		<small class="ax-done__note" ${current.practice ? "" : 'data-ack="sending"'}>${current.practice ? "순위에는 들어가지 않아요" : "기록 보내는 중…"}</small>
 	</div>`;
 	if (current.practice) return;
-	setPending({ roundNo: current.roundNo, score });
+	setPending({ roundNo: current.roundNo, playAt: current.playAt, score });
 	flushPending(true);
 	// 보냈는데 답이 없으면 연결이 조용히 끊긴 것일 수 있다. 새로 붙으면 hello 뒤에 다시 보낸다.
 	clearTimeout(ackTimer);
 	ackTimer = window.setTimeout(() => {
-		if (pending?.roundNo === current.roundNo) connection.reconnect();
+		if (isPendingFor({ no: current.roundNo, playAt: current.playAt })) connection.reconnect();
 	}, ACK_WAIT_MS);
 }
 

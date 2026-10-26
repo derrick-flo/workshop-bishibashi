@@ -1,7 +1,7 @@
 import { currentDirection, EYE, EYE_START, type EyeState, eyeDirections, eyePress, eyeScore } from "../../domain/games/eye";
 import { arcade } from "../arcade-sound";
 import { blit, rect } from "../pixel/bitmap";
-import { BIG, label } from "../pixel/font";
+import { BIG, cachedLabel } from "../pixel/font";
 import { C } from "../pixel/palette";
 import { sparkle } from "../pixel/particles";
 import { buzz } from "../sound";
@@ -63,13 +63,13 @@ export const mountEye: MountGame = (stage, seed) => {
 		const blink = Math.floor(now / 160) % 20 === 0;
 		blit(fb, blink ? EYE_SHUT : EYE_OPEN, 4, 56);
 		blit(fb, CHECK, W - 30, 56);
-		const count = label(BIG, String(state.correct), C.y, C.k);
+		const count = cachedLabel(BIG, String(state.correct), C.y, C.k);
 		blit(fb, count, W - 4 - count.w, 55);
 	}
 
 	function updateHint(now: number): void {
 		const t = kit.gameTime(now);
-		if (t === null) return kit.setHint("뚫린 쪽 버튼! ← 빨강 · ↑ 초록 · → 파랑 · ↓ FINISH");
+		if (t === null) return kit.setHint("뚫린 쪽! ←빨강 ↑초록 →파랑 ↓FINISH");
 		if (t < state.lockedUntil) return kit.setHint("틀렸어요! 잠깐 멈춤", "bad");
 		kit.setHint("뚫린 쪽을 눌러요");
 	}

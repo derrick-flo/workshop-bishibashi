@@ -10,8 +10,8 @@ import {
 } from "../../domain/games/reaction";
 import { arcade } from "../arcade-sound";
 import { type Bitmap, blit, dither, line, rect, scale } from "../pixel/bitmap";
-import { BIG, label, SMALL, text } from "../pixel/font";
-import { C } from "../pixel/palette";
+import { BIG, cachedLabel, label, SMALL } from "../pixel/font";
+import { C, CLEAR } from "../pixel/palette";
 import { buzz } from "../sound";
 import { CACTUS, type Cowboy, MUZZLE, PLAYER, type Pose, RIVAL, TUMBLEWEED } from "./art/duel";
 import { mountKit } from "./kit";
@@ -152,10 +152,10 @@ export const mountReaction: MountGame = (stage, seed) => {
 			const missed = record === null && t > windowEnd(i);
 			const mark =
 				record !== null && record < REACTION.penaltyMs
-					? text(SMALL, String(record).padStart(3, "0"), C.l)
+					? cachedLabel(SMALL, String(record).padStart(3, "0"), C.l, CLEAR)
 					: record !== null || missed
-						? text(SMALL, "x", C.p)
-						: text(SMALL, String(i + 1), C.A);
+						? cachedLabel(SMALL, "x", C.p, CLEAR)
+						: cachedLabel(SMALL, String(i + 1), C.A, CLEAR);
 			blit(fb, mark, x + 7 - Math.floor(mark.w / 2), 3);
 		});
 	}
@@ -172,7 +172,7 @@ export const mountReaction: MountGame = (stage, seed) => {
 				return;
 			case "hit": {
 				const record = state.results[scene.trial] ?? 0;
-				center(label(BIG, seconds(record), C.l, C.k), 15);
+				center(cachedLabel(BIG, seconds(record), C.l, C.k), 15);
 				return;
 			}
 			case "foul":
@@ -183,7 +183,7 @@ export const mountReaction: MountGame = (stage, seed) => {
 				return;
 			case "end":
 				center(END_TEXT, 13);
-				center(label(BIG, seconds(reactionAverage(state)), C.y, C.k), 23);
+				center(cachedLabel(BIG, seconds(reactionAverage(state)), C.y, C.k), 23);
 				return;
 			case "ready":
 				return;
@@ -193,7 +193,7 @@ export const mountReaction: MountGame = (stage, seed) => {
 	function updateHint(scene: Scene): void {
 		switch (scene.mode) {
 			case "ready":
-				return kit.setHint("하늘이 빨개지며 FIRE!(쏴!)가 뜨면 아무 버튼이나 빨리! 미리 누르면 실격");
+				return kit.setHint("FIRE!가 뜨면 아무 버튼! 미리 누르면 실격");
 			case "wait":
 				return kit.setHint("기다려…");
 			case "fire":

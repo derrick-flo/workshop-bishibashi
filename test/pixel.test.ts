@@ -13,7 +13,7 @@ import {
 	rotate90,
 	scale,
 } from "../src/client/pixel/bitmap";
-import { BIG, type Font, SMALL, text, textWidth } from "../src/client/pixel/font";
+import { BIG, cachedLabel, type Font, label, SMALL, text, textWidth } from "../src/client/pixel/font";
 import { C, CLEAR, HEX } from "../src/client/pixel/palette";
 import { drawParticles, shatter, sparkle, stepParticles } from "../src/client/pixel/particles";
 import { disc, ring } from "../src/client/pixel/shapes";
@@ -147,6 +147,13 @@ describe("글꼴", () => {
 		expect(textWidth(BIG, "GO!")).toBe(6 + 1 + 6 + 1 + 2);
 		const b = text(BIG, "1", C.y);
 		expect(rows(b)[0]).toBe("..yy..");
+	});
+
+	it("같은 글자는 한 번 만든 그림을 다시 쓴다", () => {
+		const first = cachedLabel(BIG, "12", C.y, C.k);
+		expect(cachedLabel(BIG, "12", C.y, C.k)).toBe(first);
+		expect(rows(first)).toEqual(rows(label(BIG, "12", C.y, C.k)));
+		expect(cachedLabel(BIG, "12", C.r, C.k)).not.toBe(first);
 	});
 
 	it("모르는 글자는 ?로 그린다", () => {
