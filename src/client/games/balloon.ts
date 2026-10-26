@@ -216,7 +216,7 @@ export const mountBalloon: MountGame = (stage) => {
 			}
 			if (state.burst && !before.burst) {
 				const size = balloonSize(before.pumps, BALLOON.fullPumps, BALLOON.burstPumps);
-				kit.emit(shatter(balloonBody(size.w, size.h, "normal"), NECK_X - Math.floor(size.w / 2), NECK_Y - size.h, Math.random, 80, 1000, 0.5));
+				kit.emit(shatter(balloonBody(size.w, size.h, "normal"), NECK_X - Math.floor(size.w / 2), NECK_Y - size.h, Math.random, 80, 1000, 0.3));
 				kit.popup(BURST, NECK_X, NECK_Y - Math.floor(size.h / 2), 250, 0, "mark");
 				kit.popup(POP_TEXT, W / 2, 24, 1400, 8);
 				kit.shake(3, 400);

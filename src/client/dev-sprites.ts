@@ -58,8 +58,9 @@ function candyScript(kind: string): readonly Step[] {
 	return steps.filter(([at]) => at < CANDY.durationMs);
 }
 
+/** 실제 폰처럼 입력 시각에 소수가 섞이게 하고, 2회차는 미리 눌러 실격, 3회차는 신호 뒤 0.05초(너무 빨라 실격) */
 function reactionScript(): readonly Step[] {
-	return reactionSignals(SEED).map((signal, i): Step => [i === 1 ? signal - 400 : signal + 180 + i * 40, "red"]);
+	return reactionSignals(SEED).map((signal, i): Step => [i === 1 ? signal - 400 : i === 2 ? signal + 50.3 : signal + 180.6 + i * 40, "red"]);
 }
 
 function scriptFor(gameId: GameId, kind: string): readonly Step[] {

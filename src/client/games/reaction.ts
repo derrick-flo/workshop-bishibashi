@@ -51,19 +51,21 @@ export const mountReaction: MountGame = (stage, seed) => {
 	const signalAt = (trial: number) => signals[trial] ?? 0;
 	const windowEnd = (trial: number) => signalAt(trial) + REACTION.windowMs;
 
-	/** 회차 결과 장면(입력이 있었으면 명중·실격, 없었으면 놓침) */
+	/** 회차 결과 장면. 입력이 없었으면 놓침, 벌점 기록이면(미리 눌렀거나 신호 뒤 0.1초 안) 실격, 아니면 명중 */
 	function resultOf(trial: number, t: number): Scene {
+		const record = state.results[trial] ?? null;
 		const pressedAt = presses[trial] ?? null;
-		if (state.results[trial] === null || pressedAt === null) return { mode: "miss", trial, since: t - windowEnd(trial) };
-		return { mode: pressedAt < signalAt(trial) ? "foul" : "hit", trial, since: t - pressedAt };
+		if (record === null || pressedAt === null) return { mode: "miss", trial, since: t - windowEnd(trial) };
+		return { mode: record >= REACTION.penaltyMs ? "foul" : "hit", trial, since: t - pressedAt };
 	}
 
 	function sceneAt(t: number | null): Scene {
 		if (t === null || t < 0) return { mode: "ready", trial: 0, since: 0 };
 		const trial = trialAt(signals, t);
 		if (trial === null) return t < windowEnd(signals.length - 1) + LINGER_MS ? resultOf(signals.length - 1, t) : { mode: "end", trial: signals.length, since: 0 };
-		if (trial > 0 && t < windowEnd(trial - 1) + LINGER_MS && t < signalAt(trial)) return resultOf(trial - 1, t);
+		// 이번 회차가 이미 끝났으면(미리 눌러 실격 등) 지난 회차 여운보다 먼저 보여준다
 		if (state.results[trial] !== null) return resultOf(trial, t);
+		if (trial > 0 && t < windowEnd(trial - 1) + LINGER_MS && t < signalAt(trial)) return resultOf(trial - 1, t);
 		return t < signalAt(trial) ? { mode: "wait", trial, since: 0 } : { mode: "fire", trial, since: t - signalAt(trial) };
 	}
 
@@ -152,7 +154,7 @@ export const mountReaction: MountGame = (stage, seed) => {
 			const missed = record === null && t > windowEnd(i);
 			const mark =
 				record !== null && record < REACTION.penaltyMs
-					? cachedLabel(SMALL, String(record).padStart(3, "0"), C.l, CLEAR)
+					? cachedLabel(SMALL, String(Math.floor(record)).padStart(3, "0"), C.l, CLEAR)
 					: record !== null || missed
 						? cachedLabel(SMALL, "x", C.p, CLEAR)
 						: cachedLabel(SMALL, String(i + 1), C.A, CLEAR);

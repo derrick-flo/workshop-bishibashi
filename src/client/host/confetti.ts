@@ -28,6 +28,11 @@ export function confetti(parent: HTMLElement, durationMs: number): void {
 			pieces = [...pieces, ...fresh];
 		}
 		pieces = stepParticles(pieces, dt).filter((p) => p.y < H + 2);
+		// 다 떨어졌으면 화면을 떼어 그리기를 멈춘다
+		if (!spawning && pieces.length === 0) {
+			screen.canvas.parentElement?.remove();
+			return;
+		}
 		fill(screen.fb, CLEAR);
 		// 색종이는 흔들리며 떨어진다
 		drawParticles(

@@ -79,8 +79,10 @@ export function mountKit(stage: HTMLElement, w: number, h: number, background: n
 		fb: screen.fb,
 		gameTime: (now) => (origin === null ? null : now - origin),
 		sync(t) {
-			const candidate = performance.now() - t;
-			if (origin === null || Math.abs(candidate - origin) > 50) origin = candidate;
+			// player.ts는 이번 프레임의 시각(RAF 타임스탬프)으로 t를 잰다. 같은 기준으로 맞춰야
+			// 결투 신호 같은 장면이 한 프레임 늦게 뜨지 않는다. document.timeline은 이번 프레임 시각과 같다.
+			const frameNow = document.timeline?.currentTime;
+			origin = (typeof frameNow === "number" ? frameNow : lastNow) - t;
 		},
 		setHint(text, tone = null) {
 			if (hint.textContent !== text) hint.textContent = text;

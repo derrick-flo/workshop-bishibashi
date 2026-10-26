@@ -43,5 +43,6 @@ export const C: Readonly<Record<ColorKey, number>> = Object.fromEntries(ENTRIES.
 export const HEX: readonly string[] = ["transparent", ...ENTRIES.map(([, hex]) => hex)];
 
 export function isColorKey(value: string): value is ColorKey {
-	return Object.hasOwn(C, value);
+	// Object.hasOwn은 iOS 15.4 미만에 없다
+	return Object.prototype.hasOwnProperty.call(C, value);
 }
