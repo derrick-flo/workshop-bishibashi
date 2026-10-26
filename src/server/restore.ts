@@ -1,7 +1,7 @@
 import { EMPTY_GAME, type GameState } from "../domain/game";
 import type { Player } from "../domain/player";
 
-const PHASES: ReadonlySet<string> = new Set(["lobby", "playing", "results", "finished"]);
+const PHASES: ReadonlySet<string> = new Set(["lobby", "intro", "playing", "results", "finished"]);
 
 type Fields = Readonly<Record<string, unknown>>;
 

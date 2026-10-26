@@ -2,12 +2,14 @@ import { DurableObject } from "cloudflare:workers";
 import {
 	cancelRound,
 	claim,
+	closeIntro,
 	closeRound,
 	confirmRound,
 	EMPTY_GAME,
 	finishGame,
 	type GameState,
 	isRoundComplete,
+	openIntro,
 	release,
 	reopenGame,
 	resetGame,
@@ -153,6 +155,10 @@ export class GameRoom extends DurableObject<Env> {
 			}
 			case "setPlan":
 				return setPlan(this.game, message.gameIds);
+			case "openIntro":
+				return openIntro(this.game);
+			case "closeIntro":
+				return closeIntro(this.game);
 			case "startRound":
 				return startRound(this.game, crypto.getRandomValues(new Uint32Array(1))[0] ?? 1, Date.now());
 			case "closeRound":

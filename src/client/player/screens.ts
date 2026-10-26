@@ -128,6 +128,20 @@ export function finishScreen(game: GameState, me: Player): string {
 	</section>`;
 }
 
+/** 라운드 시작 전 게임 설명. 시연은 player.ts가 [data-demo] 칸에 붙인다. */
+export function introScreen(game: GameState): string {
+	const gameId = nextGame(game);
+	if (gameId === null) return waitScreen("곧 시작해요", "앞 화면을 봐 주세요");
+	const info = GAMES[gameId];
+	return `<section class="ax-screen ax-intro">
+		<p class="ax-kicker">ROUND ${game.history.length + 1} · 게임 설명</p>
+		<div class="ax-next__head">${gameIcon(gameId)}<h1 class="ax-intro__title">${esc(info.title)}</h1></div>
+		<p class="ax-intro__howto">${esc(info.howTo)}</p>
+		<div class="ax-intro__demo" data-demo="${gameId}"></div>
+		<p class="ax-intro__wait ax-blink">진행자가 '다음'을 누르면 3·2·1 뒤에 시작해요</p>
+	</section>`;
+}
+
 /** 게임 화면 대신 보여주는 안내(이미 기록을 냈거나 늦게 들어왔을 때) */
 export function waitScreen(title: string, detail: string): string {
 	return `<section class="ax-screen ax-screen--center"><p class="ax-lead"><b>${esc(title)}</b></p><p class="ax-muted">${esc(detail)}</p></section>`;

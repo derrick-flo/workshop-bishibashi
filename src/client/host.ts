@@ -9,7 +9,8 @@ import { esc, pick } from "./dom";
 import { confetti } from "./host/confetti";
 import { editDraft } from "./host/plan-draft";
 import { planEditor } from "./host/plan-editor";
-import { finishedStage, lobbyStage, resultsStage, roundStage, type StageOptions } from "./host/stages";
+import { mountDemo } from "./games/demo";
+import { finishedStage, introStage, lobbyStage, resultsStage, roundStage, type StageOptions } from "./host/stages";
 import { type ConnectionStatus, connect } from "./net";
 import { sfx, unlockSound } from "./sound";
 
@@ -163,12 +164,21 @@ function render(): void {
 	else if (view.editing === null) paintStage(stageHtml(game));
 	paintControls(controlsHtml(game));
 	stageEffects(game);
+	mountStageDemo();
 }
 
 function paintStage(html: string): void {
 	if (paintedStage === html) return;
 	paintedStage = html;
 	stage.innerHTML = html;
+}
+
+/** 설명 화면의 시연을 한 번만 붙인다(상태가 와서 다시 그려도 이어서 돈다) */
+function mountStageDemo(): void {
+	const box = stage.querySelector<HTMLElement>("[data-demo]");
+	const gameId = box?.dataset.demo;
+	if (box === null || box.childElementCount > 0 || gameId === undefined || !isGameId(gameId)) return;
+	mountDemo(box, gameId);
 }
 
 function paintControls(html: string): void {
@@ -186,6 +196,8 @@ function stageHtml(game: GameState): string {
 	switch (game.phase.kind) {
 		case "lobby":
 			return lobbyStage(game, stageOptions());
+		case "intro":
+			return introStage(game);
 		case "playing":
 			return roundStage(game, game.phase.round, stageOptions());
 		case "results":
@@ -264,6 +276,13 @@ function controlsHtml(game: GameState): string {
 	switch (game.phase.kind) {
 		case "lobby":
 			return lobbyControls(game);
+		case "intro":
+			return `<div class="ax-controls">
+				<button type="button" class="ax-btn" data-action="intro-back">← 뒤로</button>
+				<span class="ax-controls__hint">설명을 다 봤으면 다음을 눌러요(바로 눌러도 돼요)</span>
+				<span class="ax-controls__spacer"></span>
+				<button type="button" class="ax-btn ax-btn--go" data-action="start">다음 ▶ 3·2·1</button>
+			</div>`;
 		case "playing":
 			return `<div class="ax-controls">
 				<span class="ax-controls__hint">게임 중이에요</span>
@@ -300,14 +319,14 @@ function lobbyControls(game: GameState): string {
 	const next = nextGame(game);
 	const joined = joinedPlayers(game).length;
 	const canStart = next !== null && joined >= 1;
-	const startLabel = next === null ? "시작 ▶" : `R${game.history.length + 1} ${esc(GAMES[next].title)} 시작 ▶`;
+	const startLabel = next === null ? "시작 ▶" : `R${game.history.length + 1} ${esc(GAMES[next].title)} ▶`;
 	return `<div class="ax-controls">
 		<button type="button" class="ax-btn" data-action="plan">순서표</button>
 		<button type="button" class="ax-btn" data-action="roster">명단</button>
 		<button type="button" class="ax-btn" data-action="reset">처음부터</button>
 		<span class="ax-controls__spacer"></span>
 		${game.history.length > 0 ? `<button type="button" class="ax-btn" data-action="finish">최종 순위 발표</button>` : ""}
-		<button type="button" class="ax-btn ax-btn--go" data-action="start" ${canStart ? "" : "disabled"}>${startLabel}</button>
+		<button type="button" class="ax-btn ax-btn--go" data-action="intro" ${canStart ? "" : "disabled"}>${startLabel}</button>
 	</div>`;
 }
 
@@ -333,6 +352,10 @@ function handleClick(event: MouseEvent, send: (message: HostMessage) => void): v
 	const id = target.dataset.id ?? "";
 	const action = target.dataset.action ?? "";
 	switch (action) {
+		case "intro":
+			return send({ type: "openIntro" });
+		case "intro-back":
+			return send({ type: "closeIntro" });
 		case "start":
 			return send({ type: "startRound" });
 		case "close-round":

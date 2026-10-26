@@ -1,5 +1,16 @@
 let audio: AudioContext | null = null;
 
+/** 이 요소가 화면에 붙어 있는 동안은 소리·진동을 끈다(게임 설명 시연 중 폰 30대가 한꺼번에 울리지 않게) */
+let mutedBy: Element | null = null;
+
+export function muteWhileAttached(element: Element): void {
+	mutedBy = element;
+}
+
+function isMuted(): boolean {
+	return mutedBy !== null && mutedBy.isConnected;
+}
+
 /** 아이폰은 화면을 한 번 눌러야 소리가 난다. 첫 터치 때 부른다. */
 export function unlockSound(): void {
 	try {
@@ -15,7 +26,7 @@ export function soundReady(): boolean {
 }
 
 function beep(frequency: number, durationMs: number, wave: OscillatorType = "square", volume = 0.06, delayMs = 0): void {
-	if (audio === null || audio.state !== "running") return;
+	if (audio === null || audio.state !== "running" || isMuted()) return;
 	const startAt = audio.currentTime + delayMs / 1000;
 	const oscillator = audio.createOscillator();
 	const gain = audio.createGain();
@@ -45,10 +56,11 @@ export const sfx = {
 
 /** 안드로이드만 진동한다(아이폰 사파리는 진동 기능이 없다) */
 export function buzz(ms: number): void {
+	if (isMuted()) return;
 	navigator.vibrate?.(ms);
 }
 
 /** 다른 효과음 모듈이 같은 오디오를 쓰게 꺼내 준다. 소리가 아직 안 켜졌으면 null */
 export function runningAudio(): AudioContext | null {
-	return audio !== null && audio.state === "running" ? audio : null;
+	return audio !== null && audio.state === "running" && !isMuted() ? audio : null;
 }

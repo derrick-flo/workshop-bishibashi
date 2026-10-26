@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	cancelRound,
 	claim,
+	closeIntro,
 	closeRound,
 	confirmRound,
 	EMPTY_GAME,
@@ -10,6 +11,7 @@ import {
 	isRoundComplete,
 	lockedPlanLength,
 	nextGame,
+	openIntro,
 	PLAN_LIMIT,
 	release,
 	reopenGame,
@@ -144,6 +146,41 @@ describe("순서표", () => {
 		const done = playRound(lobbyWith(["p1"], ["eye"]), { p1: 1 });
 		expect(nextGame(done)).toBeNull();
 		expect(startRound(done, 7, NOW)).toEqual({ ok: false, reason: "no_next_game" });
+	});
+});
+
+describe("게임 설명 단계", () => {
+	it("다음 게임이 있으면 로비에서 설명을 띄운다", () => {
+		expect(ok(openIntro(lobbyWith(["p1"]))).phase).toEqual({ kind: "intro" });
+	});
+
+	it("순서표가 끝났거나 로비가 아니면 띄울 수 없다", () => {
+		expect(openIntro(playRound(lobbyWith(["p1"], ["eye"]), { p1: 1 }))).toEqual({ ok: false, reason: "no_next_game" });
+		expect(openIntro(playing(["p1"]))).toEqual({ ok: false, reason: "wrong_phase" });
+	});
+
+	it("뒤로 가면 로비로 돌아가고, 설명 단계가 아니면 뒤로 갈 수 없다", () => {
+		expect(ok(closeIntro(ok(openIntro(lobbyWith(["p1"]))))).phase).toEqual({ kind: "lobby" });
+		expect(closeIntro(lobbyWith(["p1"]))).toEqual({ ok: false, reason: "wrong_phase" });
+	});
+
+	it("설명 단계에서 다음을 누르면 라운드가 시작된다", () => {
+		const round = ok(startRound(ok(openIntro(lobbyWith(["p1", "p2"]))), 7, NOW));
+		expect(round.phase.kind === "playing" && round.phase.round.participantIds).toEqual(["p1", "p2"]);
+	});
+
+	it("설명 중에는 그 라운드 게임이 잠기고, 명단 수정과 최종 발표는 할 수 없다", () => {
+		const intro = ok(openIntro(lobbyWith(["p1"], ["eye", "balloon"])));
+		expect(lockedPlanLength(intro)).toBe(1);
+		expect(ok(setPlan(intro, ["candy"])).plan).toEqual(["eye", "candy"]);
+		expect(setRoster(intro, ["가"], idMaker())).toEqual({ ok: false, reason: "wrong_phase" });
+		expect(finishGame(intro)).toEqual({ ok: false, reason: "wrong_phase" });
+	});
+
+	it("설명 중에 들어온 사람도 시작할 때 입장해 있으면 참가한다", () => {
+		const intro = ok(claim(ok(openIntro(lobbyWith(["p1"]))), "p2"));
+		const round = ok(startRound(intro, 7, NOW));
+		expect(round.phase.kind === "playing" && round.phase.round.participantIds).toEqual(["p1", "p2"]);
 	});
 });
 

@@ -39,6 +39,8 @@ export type RoundResult = {
 
 export type Phase =
 	| { readonly kind: "lobby" }
+	/** 라운드 시작 전 게임 설명(시연). 다음 라운드 게임은 순서표에서 잠긴다. 진행자가 다음을 누르면 시작한다. */
+	| { readonly kind: "intro" }
 	| { readonly kind: "playing"; readonly round: Round }
 	/** 기록 받기를 끝내고 순위를 보여주는 중. 진행자가 확정하면 기록에 쌓인다. */
 	| { readonly kind: "results"; readonly round: Round }
@@ -108,7 +110,7 @@ export function release(state: GameState, playerId: PlayerId): Transition {
 
 /** 순서표에서 바꿀 수 없는 앞부분 길이. 확정한 라운드에 지금 하는 라운드를 더한다. */
 export function lockedPlanLength(state: GameState): number {
-	const inRound = state.phase.kind === "playing" || state.phase.kind === "results";
+	const inRound = state.phase.kind === "intro" || state.phase.kind === "playing" || state.phase.kind === "results";
 	return state.history.length + (inRound ? 1 : 0);
 }
 
@@ -129,8 +131,22 @@ export function joinedPlayers(state: GameState): readonly Player[] {
 	return state.players.filter((player) => player.claimed);
 }
 
-export function startRound(state: GameState, seed: number, now: number): Transition {
+/** 다음 라운드 게임 설명을 띄운다 */
+export function openIntro(state: GameState): Transition {
 	if (state.phase.kind !== "lobby") return reject("wrong_phase");
+	if (nextGame(state) === null) return reject("no_next_game");
+	return accept({ ...state, phase: { kind: "intro" } });
+}
+
+/** 설명을 접고 로비로 돌아간다(게임을 바꾸러) */
+export function closeIntro(state: GameState): Transition {
+	if (state.phase.kind !== "intro") return reject("wrong_phase");
+	return accept({ ...state, phase: { kind: "lobby" } });
+}
+
+/** 라운드를 시작한다. 보통은 설명 단계에서, 설명 없이 로비에서 바로 시작할 수도 있다. */
+export function startRound(state: GameState, seed: number, now: number): Transition {
+	if (state.phase.kind !== "lobby" && state.phase.kind !== "intro") return reject("wrong_phase");
 	const gameId = nextGame(state);
 	if (gameId === null) return reject("no_next_game");
 	const participantIds = joinedPlayers(state).map((player) => player.id);

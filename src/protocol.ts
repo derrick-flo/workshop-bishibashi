@@ -14,6 +14,9 @@ export type HostMessage =
 	| { readonly type: "setRoster"; readonly names: readonly string[] }
 	/** 순서표에서 아직 안 한 부분을 통째로 바꾼다 */
 	| { readonly type: "setPlan"; readonly gameIds: readonly GameId[] }
+	/** 다음 라운드 게임 설명(시연)을 띄운다 / 접고 로비로 */
+	| { readonly type: "openIntro" }
+	| { readonly type: "closeIntro" }
 	| { readonly type: "startRound" }
 	| { readonly type: "closeRound" }
 	| { readonly type: "confirmRound" }
@@ -73,6 +76,8 @@ const PARSERS: Readonly<Record<ClientMessage["type"], (fields: Fields) => Client
 		const parsed = parseGameIds(gameIds);
 		return parsed === null ? null : { type: "setPlan", gameIds: parsed };
 	},
+	openIntro: () => ({ type: "openIntro" }),
+	closeIntro: () => ({ type: "closeIntro" }),
 	startRound: () => ({ type: "startRound" }),
 	closeRound: () => ({ type: "closeRound" }),
 	confirmRound: () => ({ type: "confirmRound" }),
@@ -101,6 +106,8 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 const HOST_TYPES: ReadonlySet<ClientMessage["type"]> = new Set([
 	"setRoster",
 	"setPlan",
+	"openIntro",
+	"closeIntro",
 	"startRound",
 	"closeRound",
 	"confirmRound",

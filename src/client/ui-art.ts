@@ -1,4 +1,4 @@
-import { outline } from "./pixel/bitmap";
+import { flipX, outline, rotate90 } from "./pixel/bitmap";
 import { C } from "./pixel/palette";
 import { sprite } from "./pixel/sprite";
 import { toSvg } from "./pixel/svg";
@@ -35,9 +35,36 @@ export const TROPHY = outline(
 
 export const STAR = outline(sprite(["..y..", ".yyy.", "yyyyy", ".yyy.", ".y.y."]), C.k);
 
+/** 시연에서 버튼을 누르는 손. 위를 가리키는 손을 뒤집어 손가락 끝이 아래(가로 58% 지점)에 오게 한다. */
+export const HAND = rotate90(
+	rotate90(
+		sprite([
+			"....kk......",
+			"...kwwk.....",
+			"...kwwk.....",
+			"...kwwk.....",
+			"...kwwkkk...",
+			"...kwwkwwkk.",
+			".kkkwwkwwkwk",
+			"kwwkwwwwwkwk",
+			"kwwkwwwwwwwk",
+			".kwwwwwwwwwk",
+			"..kwwwwwwwWk",
+			"..kwwwwwwWk.",
+			"...kwwwwwWk.",
+			"...kWWWWWk..",
+			"....kaaaak..",
+			"....kkkkkk..",
+		]),
+	),
+);
+
 export const svg = {
 	crown: toSvg(CROWN, "px-art ax-icon-crown"),
 	speaker: toSvg(SPEAKER, "px-art ax-icon-inline"),
 	trophy: toSvg(TROPHY, "px-art ax-icon-trophy"),
 	star: toSvg(STAR, "px-art ax-icon-inline"),
+	/** 오른손(그대로)과 왼손(좌우 뒤집음) */
+	hand: toSvg(HAND, "px-art"),
+	leftHand: toSvg(flipX(HAND), "px-art"),
 };

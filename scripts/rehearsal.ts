@@ -145,6 +145,17 @@ async function joinAll(host: Bot, names: readonly string[]): Promise<Bot[]> {
 
 /** 라운드 하나를 치른다. 끊겼다 붙는 사람, 기록을 안 내는 사람, 두 번 내는 사람을 섞는다. */
 async function playRound(host: Bot, bots: Bot[], roundNo: number): Promise<Round> {
+	// 게임 설명을 띄웠다가 '다음'으로 시작한다. 첫 라운드는 '뒤로'도 한 번 눌러 본다.
+	host.send({ type: "openIntro" });
+	await host.until(() => host.game?.phase.kind === "intro", "게임 설명");
+	if (roundNo === 1) {
+		await Promise.all(bots.map((bot) => bot.until(() => bot.game?.phase.kind === "intro", "폰에 게임 설명")));
+		host.send({ type: "closeIntro" });
+		await host.until(() => host.game?.phase.kind === "lobby", "설명에서 뒤로");
+		host.send({ type: "openIntro" });
+		await host.until(() => host.game?.phase.kind === "intro", "게임 설명 다시");
+		check(true, "게임 설명이 모든 폰에 뜨고, 뒤로 갔다가 다시 띄울 수 있다");
+	}
 	host.send({ type: "startRound" });
 	await host.until(() => host.game?.phase.kind === "playing" && host.game.phase.round.no === roundNo, "라운드 시작");
 	const phase = host.game?.phase;

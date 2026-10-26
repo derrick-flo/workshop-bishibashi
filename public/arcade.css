@@ -1508,6 +1508,144 @@ body.host {
 	font-size: calc(var(--hp) * 12);
 }
 
+/* ---------- 게임 설명(시연) ---------- */
+/* 시연: 작은 폰 화면. 실제 게임과 같은 무대·패드를 쓰되 글자·테두리는 작게 */
+.ax-demo {
+	--fp: 1.25px;
+	--fp2: 1.5px;
+	--fp3: 2px;
+	--px: 2px;
+	position: relative;
+	height: 100%;
+	overflow: hidden;
+	background: #120f2e;
+	box-shadow:
+		0 0 0 3px var(--ax-ink),
+		0 0 0 6px var(--ax-lavender);
+}
+
+.host .ax-demo {
+	--fp: 1.5px;
+	--fp2: 2px;
+	--fp3: 3px;
+	--px: 3px;
+}
+
+.play.ax-demo {
+	height: 100%;
+	padding-bottom: 0;
+}
+
+.ax-demo .pad {
+	padding: 8px 10px 12px;
+}
+
+.ax-demo .pad__btn--finish {
+	height: 44px;
+}
+
+.ax-demo__badge {
+	position: absolute;
+	top: 6px;
+	left: 6px;
+	z-index: 6;
+	padding: 0 6px;
+	background: var(--ax-red);
+	color: var(--ax-white);
+	font-size: 12px;
+	box-shadow: 0 0 0 2px var(--ax-ink);
+	animation: ax-blink 900ms steps(2) infinite;
+}
+
+.ax-demo__hand {
+	position: absolute;
+	top: 0;
+	left: 0;
+	z-index: 7;
+	width: 16%;
+	pointer-events: none;
+	transition: transform 120ms steps(3);
+	filter: drop-shadow(3px 3px 0 rgb(0 0 0 / 0.35));
+}
+
+.ax-demo__hand .px-art {
+	image-rendering: pixelated;
+}
+
+.ax-demo__hand.is-tap .px-art {
+	animation: ax-tap 160ms steps(2);
+}
+
+@keyframes ax-tap {
+	50% {
+		transform: translateY(14%);
+	}
+}
+
+/* 폰 설명 화면 */
+.ax-intro {
+	gap: calc(var(--px) * 3);
+	padding-top: max(16px, env(safe-area-inset-top));
+}
+
+.ax-intro__title {
+	margin: 0;
+	color: var(--ax-white);
+	font-size: calc(var(--fp3) * 12);
+	font-weight: 400;
+}
+
+.ax-intro__howto {
+	margin: 0;
+	color: var(--ax-pale);
+	font-size: calc(var(--fp) * 12);
+	line-height: 1.5;
+}
+
+.ax-intro__demo {
+	width: min(100% - 12px, 340px);
+	height: min(56dvh, 520px);
+	margin: 6px auto;
+}
+
+.ax-intro__wait {
+	margin: 0;
+	color: var(--ax-yellow);
+	font-size: calc(var(--fp) * 12);
+	text-align: center;
+}
+
+/* 진행자 설명 화면: 왼쪽 설명, 오른쪽 시연 */
+.ax-intro-stage {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+	gap: calc(var(--hp) * 12);
+}
+
+.ax-intro-stage__info {
+	display: grid;
+	gap: calc(var(--hp) * 5);
+}
+
+.ax-intro-stage__howto {
+	margin: 0;
+	color: var(--ax-pale);
+	font-size: calc(var(--hp2) * 12);
+	line-height: 1.5;
+}
+
+.ax-intro-stage__next {
+	margin: 0;
+	color: var(--ax-yellow);
+	font-size: calc(var(--hp) * 12);
+}
+
+.ax-intro-stage__demo {
+	width: calc(var(--hp) * 130);
+	height: min(calc(var(--hp) * 235), 74vh);
+}
+
 /* ---------- 개발용 미리보기 ---------- */
 body.dev {
 	margin: 0;

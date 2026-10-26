@@ -16,7 +16,7 @@ describe("parseClientMessage", () => {
 		expect(parse({ type: "setRoster", names: ["김철수", "이영희"] })).toEqual({ type: "setRoster", names: ["김철수", "이영희"] });
 		expect(parse({ type: "setPlan", gameIds: ["eye", "balloon", "eye"] })).toEqual({ type: "setPlan", gameIds: ["eye", "balloon", "eye"] });
 		expect(parse({ type: "setPlan", gameIds: [] })).toEqual({ type: "setPlan", gameIds: [] });
-		for (const type of ["startRound", "closeRound", "confirmRound", "cancelRound", "finishGame", "reopenGame", "reset"]) {
+		for (const type of ["openIntro", "closeIntro", "startRound", "closeRound", "confirmRound", "cancelRound", "finishGame", "reopenGame", "reset"]) {
 			expect(parse({ type })).toEqual({ type });
 		}
 		expect(parse({ type: "release", playerId: "p3" })).toEqual({ type: "release", playerId: "p3" });
@@ -59,6 +59,8 @@ describe("isHostMessage", () => {
 		expect(isHostMessage({ type: "startRound" })).toBe(true);
 		expect(isHostMessage({ type: "setPlan", gameIds: [] })).toBe(true);
 		expect(isHostMessage({ type: "confirmRound" })).toBe(true);
+		expect(isHostMessage({ type: "openIntro" })).toBe(true);
+		expect(isHostMessage({ type: "closeIntro" })).toBe(true);
 		expect(isHostMessage({ type: "release", playerId: "p1" })).toBe(true);
 		expect(isHostMessage({ type: "claim", playerId: "p1" })).toBe(false);
 		expect(isHostMessage({ type: "hello", token: null })).toBe(false);

@@ -1,5 +1,5 @@
 import type { GameState, Round } from "../domain/game";
-import { GAMES } from "../domain/games/catalog";
+import { GAMES, isGameId } from "../domain/games/catalog";
 import type { Player, PlayerId } from "../domain/player";
 import { submittableScore } from "../domain/score";
 import type { ServerMessage } from "../protocol";
@@ -12,7 +12,8 @@ import { MOUNTS } from "./games";
 import { gameIcon } from "./games/art";
 import type { GameView } from "./games/types";
 import { type ConnectionStatus, connect } from "./net";
-import { connectingScreen, finishScreen, joinScreen, lobbyScreen, resultScreen, waitScreen } from "./player/screens";
+import { mountDemo } from "./games/demo";
+import { connectingScreen, finishScreen, introScreen, joinScreen, lobbyScreen, resultScreen, waitScreen } from "./player/screens";
 import { buzz, sfx, soundReady, unlockSound } from "./sound";
 import { keepAwake } from "./wake";
 
@@ -219,12 +220,24 @@ function render(): void {
 	}
 	if (game.phase.kind === "playing") return startRun(game.phase.round, me);
 	stopRun();
+	if (game.phase.kind === "intro") {
+		paint(introScreen(game));
+		return mountIntroDemo();
+	}
 	if (game.phase.kind === "results") {
 		playResultSound(game.phase.round, me);
 		return paint(resultScreen(game, game.phase.round, me));
 	}
 	if (game.phase.kind === "finished") return paint(finishScreen(game, me));
 	return paint(lobbyScreen(game, me, soundReady()));
+}
+
+/** 설명 화면의 시연을 한 번만 붙인다(상태가 와서 다시 그려도 이어서 돈다) */
+function mountIntroDemo(): void {
+	const box = root.querySelector<HTMLElement>("[data-demo]");
+	const gameId = box?.dataset.demo;
+	if (box === null || box.childElementCount > 0 || gameId === undefined || !isGameId(gameId)) return;
+	mountDemo(box, gameId);
 }
 
 function paint(html: string): void {

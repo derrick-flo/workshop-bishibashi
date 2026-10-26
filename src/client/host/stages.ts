@@ -94,6 +94,22 @@ export function lobbyStage(game: GameState, options: StageOptions): string {
 	</section>`;
 }
 
+/** 라운드 시작 전 게임 설명. 시연은 host.ts가 [data-demo] 칸에 붙인다. */
+export function introStage(game: GameState): string {
+	const gameId = nextGame(game);
+	if (gameId === null) return `<section class="ax-round"><p class="ax-muted">순서표에 다음 게임이 없어요</p></section>`;
+	const info = GAMES[gameId];
+	return `<section class="ax-intro-stage">
+		<div class="ax-intro-stage__info">
+			<p class="ax-kicker">ROUND ${game.history.length + 1} · 게임 설명</p>
+			<div class="ax-round__title">${gameIcon(gameId, "ax-round__icon")}<h1>${esc(info.title)}</h1></div>
+			<p class="ax-intro-stage__howto">${esc(info.howTo)}</p>
+			<p class="ax-intro-stage__next ax-blink">다음 ▶ 을 누르면 READY → 3 · 2 · 1 → GO!</p>
+		</div>
+		<div class="ax-intro-stage__demo" data-demo="${gameId}"></div>
+	</section>`;
+}
+
 export function roundStage(game: GameState, round: Round, options: StageOptions): string {
 	const info = GAMES[round.gameId];
 	const submitted = Object.keys(round.scores).length;

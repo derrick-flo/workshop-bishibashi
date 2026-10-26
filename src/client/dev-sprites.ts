@@ -5,6 +5,7 @@
  *   ?script=burst      풍선을 터뜨리는 시나리오 등(게임별)
  *   ?w=390&h=360       무대 크기(CSS px)
  *   ?at=5000           이 시각(ms)에 멈춘 장면(스크린샷용)
+ *   ?demo=1            게임 설명 화면의 시연(실제 게임 자동 플레이 + 손가락)으로 보기
  */
 import { BALLOON } from "../domain/games/balloon";
 import type { Button } from "../domain/games/button";
@@ -16,6 +17,7 @@ import { createController } from "./controller";
 import { applyCrispUnits } from "./crisp";
 import { esc } from "./dom";
 import { MOUNTS } from "./games";
+import { mountDemo } from "./games/demo";
 import { GAME_ART } from "./games/art";
 import { BIG, SMALL, text } from "./pixel/font";
 import { C, HEX } from "./pixel/palette";
@@ -175,6 +177,8 @@ if (root !== null) {
 		<h2>팔레트</h2><div class="dev-palette">${palette()}</div>`;
 	for (const box of root.querySelectorAll<HTMLElement>(".dev-phone")) {
 		const id = GAME_IDS.find((gameId) => gameId === box.dataset.id);
-		if (id !== undefined) mountLab(box, id, params.get("script") ?? "", at === null ? null : Number(at));
+		if (id === undefined) continue;
+		if (params.has("demo")) mountDemo(box, id);
+		else mountLab(box, id, params.get("script") ?? "", at === null ? null : Number(at));
 	}
 }
