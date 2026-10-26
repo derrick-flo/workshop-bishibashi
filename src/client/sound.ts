@@ -47,3 +47,8 @@ export const sfx = {
 export function buzz(ms: number): void {
 	navigator.vibrate?.(ms);
 }
+
+/** 다른 효과음 모듈이 같은 오디오를 쓰게 꺼내 준다. 소리가 아직 안 켜졌으면 null */
+export function runningAudio(): AudioContext | null {
+	return audio !== null && audio.state === "running" ? audio : null;
+}

@@ -1,10 +1,15 @@
-import qrcode from "qrcode-generator";
-import { type GameState, nextParticipants, type Phase, type Round, suggestCutCount } from "../domain/game";
-import { GAME_IDS, GAMES } from "../domain/games/catalog";
-import type { Player, PlayerId } from "../domain/player";
-import { rankScores } from "../domain/ranking";
+import { type GameState, joinedPlayers, lockedPlanLength, nextGame } from "../domain/game";
+import { GAMES, type GameId, isGameId } from "../domain/games/catalog";
+import type { PlayerId } from "../domain/player";
 import type { HostMessage, ServerMessage } from "../protocol";
-import { esc, pick, serverTime } from "./dom";
+import { arcade } from "./arcade-sound";
+import { createServerClock } from "./clock";
+import { applyCrispUnits } from "./crisp";
+import { esc, pick } from "./dom";
+import { confetti } from "./host/confetti";
+import { editDraft } from "./host/plan-draft";
+import { planEditor } from "./host/plan-editor";
+import { finishedStage, lobbyStage, resultsStage, roundStage, type StageOptions } from "./host/stages";
 import { type ConnectionStatus, connect } from "./net";
 import { sfx, unlockSound } from "./sound";
 
@@ -13,18 +18,21 @@ const KEY_STORE = "bishibashi.hostKey";
 type View = {
 	readonly game: GameState | null;
 	readonly onlineIds: readonly PlayerId[];
-	readonly offsetMs: number;
 	readonly status: ConnectionStatus;
-	readonly editingRoster: boolean;
+	/** 앞 화면에서 고치는 중인 것. 고치는 동안에는 앞 화면을 다시 그리지 않는다. */
+	readonly editing: "roster" | "plan" | null;
+	/** 순서표 편집 중인 아직 안 한 라운드들 */
+	readonly draft: readonly GameId[];
 	readonly selected: PlayerId | null;
 	readonly notice: string | null;
+	readonly resultsTab: "round" | "total";
 };
 
 const REJECTION_TEXT: Readonly<Record<string, string>> = {
-	invalid_cut: "탈락 인원은 참가자 수보다 적어야 해요.",
+	no_next_game: "순서표에 남은 게임이 없어요. 순서표에 게임을 넣어 주세요.",
 	not_enough_players: "입장한 사람이 있어야 시작할 수 있어요.",
-	no_upcoming: "먼저 게임을 고르세요.",
-	roster_locked: "첫 라운드가 끝나면 명단을 바꿀 수 없어요.",
+	plan_too_long: "순서표는 30라운드까지예요.",
+	nothing_played: "끝난 라운드가 있어야 최종 순위를 낼 수 있어요.",
 	wrong_phase: "지금은 할 수 없는 동작이에요.",
 	not_host: "진행자 권한이 없어요.",
 	bad_message: "형식이 맞지 않아요. 이름은 30자, 명단은 100명까지 넣을 수 있어요.",
@@ -33,20 +41,26 @@ const REJECTION_TEXT: Readonly<Record<string, string>> = {
 const stage = pick(document, "#stage");
 const controls = pick(document, "#controls");
 const banner = pick(document, "#banner");
+const clock = createServerClock();
 
 let view: View = {
 	game: null,
 	onlineIds: [],
-	offsetMs: 0,
 	status: "offline",
-	editingRoster: false,
+	editing: null,
+	draft: [],
 	selected: null,
 	notice: null,
+	resultsTab: "round",
 };
 let paintedStage: string | null = null;
 let paintedControls: string | null = null;
 let noticeTimer = 0;
 let lastCountdown: number | null = null;
+/** 결과 공개·시상대 연출을 한 번만 하도록 기억한다 */
+let revealedFor: string | null = null;
+
+applyCrispUnits();
 
 /** 주소창의 키는 바로 지운다(프로젝터 화면에 키가 보이지 않게). 이 탭에서만 기억한다. */
 function readHostKey(): string | null {
@@ -84,16 +98,16 @@ if (hostKey === null) {
 function showKeyGate(message: string): void {
 	sessionStorage.removeItem(KEY_STORE);
 	controls.innerHTML = "";
-	stage.innerHTML = `<section class="gate">
-		<h1>진행자 화면</h1>
-		${message ? `<p class="gate__error">${esc(message)}</p>` : ""}
-		<form class="gate__form">
+	stage.innerHTML = `<section class="ax-gate ax-box">
+		<h1 class="ax-logo"><span>진행자</span><b>비시바시</b></h1>
+		${message ? `<p class="ax-gate__error">${esc(message)}</p>` : ""}
+		<form class="ax-gate__form">
 			<label for="host-key">진행자 키</label>
 			<input id="host-key" name="key" type="password" autocomplete="off" required>
-			<button type="submit" class="btn btn--primary">들어가기</button>
+			<button type="submit" class="ax-btn ax-btn--go">들어가기</button>
 		</form>
 	</section>`;
-	pick<HTMLFormElement>(stage, ".gate__form").addEventListener("submit", (event) => {
+	pick<HTMLFormElement>(stage, ".ax-gate__form").addEventListener("submit", (event) => {
 		event.preventDefault();
 		const key = new FormData(event.currentTarget as HTMLFormElement).get("key");
 		if (typeof key !== "string" || key.length === 0) return;
@@ -109,7 +123,9 @@ function update(patch: Partial<View>): void {
 
 function handleMessage(message: ServerMessage): void {
 	if (message.type === "state") {
-		return update({ game: message.game, onlineIds: message.onlineIds, offsetMs: message.serverNow - Date.now() });
+		clock.sample(message.serverNow);
+		const enteringResults = message.game.phase.kind === "results" && view.game?.phase.kind !== "results";
+		return update({ game: message.game, onlineIds: message.onlineIds, ...(enteringResults ? { resultsTab: "round" as const } : {}) });
 	}
 	if (message.type === "rejected") notify(REJECTION_TEXT[message.reason] ?? `거절됨: ${message.reason}`);
 }
@@ -129,10 +145,11 @@ function render(): void {
 	banner.dataset.tone = offline ? "alert" : "notice";
 
 	const { game } = view;
-	if (game === null) return paintStage(`<section class="gate"><p class="lead">연결 중…</p></section>`);
-	// 명단을 고치는 중에는 입력이 날아가지 않게 앞 화면을 다시 그리지 않는다
-	if (!view.editingRoster) paintStage(stageHtml(game));
+	if (game === null) return paintStage(`<section class="ax-gate"><p class="ax-lead ax-blink">연결 중…</p></section>`);
+	if (view.editing === "plan") paintStage(planEditor(game, view.draft));
+	else if (view.editing === null) paintStage(stageHtml(game));
 	paintControls(controlsHtml(game));
+	stageEffects(game);
 }
 
 function paintStage(html: string): void {
@@ -148,221 +165,135 @@ function paintControls(html: string): void {
 	controls.innerHTML = html;
 }
 
+function stageOptions(): StageOptions {
+	return { onlineIds: view.onlineIds, selected: view.selected, resultsTab: view.resultsTab };
+}
+
 function stageHtml(game: GameState): string {
 	switch (game.phase.kind) {
 		case "lobby":
-			return lobbyStage(game);
+			return lobbyStage(game, stageOptions());
 		case "playing":
-			return roundStage(game.phase.round);
+			return roundStage(game, game.phase.round, stageOptions());
 		case "results":
-			return resultsStage(game, game.phase);
+			return resultsStage(game, game.phase.round, stageOptions());
 		case "finished":
-			return championStage(game, game.phase.winnerIds);
+			return finishedStage(game);
 	}
 }
 
-function lobbyStage(game: GameState): string {
-	const next = game.upcoming === null ? "" : nextBanner(game.upcoming.gameId, game.upcoming.cutCount);
-	if (game.roundsPlayed === 0) {
-		const claimed = game.players.filter((player) => player.claimed).length;
-		return `<section class="lobby">
-			<div class="join">
-				<div class="join__qr">${joinQr()}</div>
-				<p class="join__url">${esc(location.host)}</p>
-				<p class="join__hint">폰 카메라로 찍고 내 이름을 누르세요</p>
-			</div>
-			<div class="people">
-				<h2 class="people__title">입장 <b>${claimed}</b> / ${game.players.length}</h2>
-				${game.players.length === 0 ? `<p class="lead">아래 ‘명단’ 버튼으로 참가자 이름을 넣어 주세요.</p>` : chips(game)}
-			</div>
-		</section>${next}`;
+/** 결과를 한 줄씩 공개할 때 틱 소리, 최종 발표 때 색종이와 팡파르. 화면이 바뀔 때 한 번만. */
+function stageEffects(game: GameState): void {
+	const key =
+		game.phase.kind === "results" ? `results:${game.phase.round.no}:${view.resultsTab}` : game.phase.kind === "finished" ? `finished:${game.history.length}` : null;
+	if (key === null || key === revealedFor || view.editing !== null) {
+		if (key === null) revealedFor = null;
+		return;
 	}
-	const alive = game.players.filter((player) => player.status === "alive").length;
-	return `<section class="lobby lobby--between">
-		<div class="people">
-			<h2 class="people__title">생존 <b>${alive}</b>명</h2>
-			${chips(game)}
-		</div>
-	</section>${next}`;
+	revealedFor = key;
+	if (game.phase.kind === "results" && view.resultsTab === "round") {
+		const count = game.phase.round.participantIds.length;
+		for (let i = 0; i < count; i++) setTimeout(() => arcade.reveal(), 300 + i * 110);
+		setTimeout(() => arcade.jar(), 300 + count * 110);
+	}
+	if (game.phase.kind === "finished") {
+		setTimeout(() => arcade.drum(), 600);
+		setTimeout(() => arcade.drum(), 2000);
+		setTimeout(() => {
+			arcade.fanfare();
+			const host = stage.querySelector<HTMLElement>(".ax-final-stage");
+			if (host !== null) confetti(host, 6000);
+		}, 3400);
+	}
 }
 
-function joinQr(): string {
-	const qr = qrcode(0, "M");
-	qr.addData(`${location.origin}/`);
-	qr.make();
-	return qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
-}
-
-function chips(game: GameState): string {
-	return `<ul class="chips">${game.players.map((player) => chip(player, game)).join("")}</ul>`;
-}
-
-function chip(player: Player, game: GameState): string {
-	const online = view.onlineIds.includes(player.id);
-	const classes = [
-		"chip",
-		`chip--${player.status}`,
-		player.claimed ? "is-claimed" : "",
-		online ? "is-online" : "",
-		view.selected === player.id ? "is-selected" : "",
-	].join(" ");
-	const menu = view.selected === player.id ? playerMenu(player, game) : "";
-	return `<li><button type="button" class="${classes}" data-action="select" data-id="${esc(player.id)}" aria-pressed="${view.selected === player.id}">
-		<span class="chip__dot" aria-hidden="true"></span>${esc(player.name)}
-	</button>${menu}</li>`;
-}
-
-function playerMenu(player: Player, game: GameState): string {
-	const canRevive = player.status !== "alive" && (game.roundsPlayed > 0 || player.status === "out");
-	return `<div class="chip-menu">
-		${canRevive ? `<button type="button" class="btn btn--small" data-action="alive" data-id="${esc(player.id)}">살리기</button>` : ""}
-		${player.status !== "out" ? `<button type="button" class="btn btn--small" data-action="out" data-id="${esc(player.id)}">탈락시키기</button>` : ""}
-		${player.claimed ? `<button type="button" class="btn btn--small" data-action="release" data-id="${esc(player.id)}">입장 풀기</button>` : ""}
-	</div>`;
-}
-
-function nextBanner(gameId: keyof typeof GAMES, cutCount: number): string {
-	const info = GAMES[gameId];
-	return `<aside class="next-up">
-		<p class="next-up__label">다음 게임</p>
-		<p class="next-up__title">${info.emoji} ${esc(info.title)}</p>
-		<p class="next-up__howto">${esc(info.howTo)}</p>
-		<p class="next-up__cut">${cutCount}명 탈락</p>
-	</aside>`;
-}
-
-function roundStage(round: Round): string {
-	const info = GAMES[round.gameId];
-	const submitted = Object.keys(round.scores).length;
-	return `<section class="round">
-		<p class="round__no">라운드 ${round.no} · ${round.cutCount}명 탈락</p>
-		<h1 class="round__title">${info.emoji} ${esc(info.title)}</h1>
-		<p class="round__howto">${esc(info.howTo)}</p>
-		<p class="round__clock" data-play-at="${round.playAt}" data-end-at="${round.endAt}">준비</p>
-		<div class="round__bar" aria-hidden="true"><div></div></div>
-		<p class="round__count">기록 <b>${submitted}</b> / ${round.participantIds.length}</p>
-	</section>`;
-}
-
-/** 앞 화면 카운트다운과 남은 시간 막대. 상태 메시지 없이도 매 프레임 움직인다. */
+/** 앞 화면 카운트다운·남은 시간 막대·기록 기다리는 사람 표시. 상태 메시지 없이도 매 프레임 움직인다. */
 function tickClock(): void {
 	requestAnimationFrame(tickClock);
-	const clock = stage.querySelector<HTMLElement>(".round__clock");
-	const bar = stage.querySelector<HTMLElement>(".round__bar > div");
-	if (clock === null || bar === null) return;
-	const now = serverTime(view.offsetMs);
-	const playAt = Number(clock.dataset.playAt);
-	const endAt = Number(clock.dataset.endAt);
+	const round = stage.querySelector<HTMLElement>(".ax-round");
+	const clockText = stage.querySelector<HTMLElement>(".ax-round__clock");
+	const bar = stage.querySelector<HTMLElement>(".ax-round__bar > i");
+	if (round === null || clockText === null || bar === null) return;
+	const now = clock.now();
+	const playAt = Number(round.dataset.playAt);
+	const endAt = Number(round.dataset.endAt);
 	if (now < playAt) {
 		const seconds = Math.ceil((playAt - now) / 1000);
-		clock.textContent = seconds > 3 ? "준비" : String(seconds);
+		clockText.textContent = seconds > 3 ? "READY" : String(seconds);
 		if (seconds <= 3 && seconds !== lastCountdown) sfx.tick();
 		lastCountdown = seconds;
 		bar.style.transform = "scaleX(1)";
 	} else if (now <= endAt) {
 		if (lastCountdown !== 0) sfx.go();
 		lastCountdown = 0;
-		clock.textContent = ((endAt - now) / 1000).toFixed(1);
-		bar.style.transform = `scaleX(${(endAt - now) / (endAt - playAt)})`;
+		clockText.textContent = ((endAt - now) / 1000).toFixed(1);
+		// 막대는 칸 단위로 줄어든다(부드럽게 줄면 픽셀 느낌이 깨진다)
+		bar.style.transform = `scaleX(${Math.ceil(((endAt - now) / (endAt - playAt)) * 40) / 40})`;
 	} else {
 		if (lastCountdown !== -1) sfx.end();
 		lastCountdown = -1;
-		clock.textContent = "집계 중";
+		clockText.textContent = "집계 중";
 		bar.style.transform = "scaleX(0)";
 	}
-}
-
-function resultsStage(game: GameState, phase: Extract<Phase, { kind: "results" }>): string {
-	const { round, cutIds } = phase;
-	const info = GAMES[round.gameId];
-	const nameOf = (id: PlayerId) => game.players.find((player) => player.id === id)?.name ?? "?";
-	const rows = rankScores(round.participantIds, round.scores).map((entry) => {
-		const cut = cutIds.includes(entry.playerId);
-		return `<li><button type="button" class="rank${cut ? " is-cut" : ""}" data-action="toggle-cut" data-id="${esc(entry.playerId)}">
-			<span class="rank__no">${entry.rank ?? "-"}</span>
-			<span class="rank__name">${esc(nameOf(entry.playerId))}</span>
-			<span class="rank__score">${entry.score === null ? "기록 없음" : esc(info.formatScore(entry.score))}</span>
-			${cut ? `<span class="rank__stamp">탈락</span>` : ""}
-		</button></li>`;
-	});
-	return `<section class="results">
-		<header class="results__head">
-			<p class="results__no">라운드 ${round.no} 결과</p>
-			<h1 class="results__title">${info.emoji} ${esc(info.title)}</h1>
-			<p class="results__sum">탈락 <b>${cutIds.length}</b>명 · 생존 <b>${round.participantIds.length - cutIds.length}</b>명</p>
-		</header>
-		<ol class="ranking">${rows.join("")}</ol>
-	</section>`;
-}
-
-function championStage(game: GameState, winnerIds: readonly PlayerId[]): string {
-	const names = game.players.filter((player) => winnerIds.includes(player.id)).map((player) => player.name);
-	return `<section class="champion">
-		<p class="champion__crown" aria-hidden="true">👑</p>
-		<h1 class="champion__title">우승</h1>
-		<p class="champion__name">${esc(names.join(", ") || "없음")}</p>
-	</section>`;
+	round.classList.toggle("is-collecting", now > endAt);
 }
 
 function controlsHtml(game: GameState): string {
-	if (view.editingRoster) return "";
+	if (view.editing !== null) return "";
 	switch (game.phase.kind) {
 		case "lobby":
 			return lobbyControls(game);
 		case "playing":
-			return `<div class="controls__row">
-				<span class="controls__hint">게임 중이에요</span>
-				<span class="controls__spacer"></span>
-				<button type="button" class="btn" data-action="cancel-round">라운드 취소</button>
-				<button type="button" class="btn" data-action="close-round">지금 마감</button>
+			return `<div class="ax-controls">
+				<span class="ax-controls__hint">게임 중이에요</span>
+				<span class="ax-controls__spacer"></span>
+				<button type="button" class="ax-btn" data-action="cancel-round">라운드 취소</button>
+				<button type="button" class="ax-btn ax-btn--go" data-action="close-round">지금 마감</button>
 			</div>`;
-		case "results":
-			return `<div class="controls__row">
-				<span class="controls__hint">이름을 누르면 살리기·탈락을 바꿀 수 있어요</span>
-				<span class="controls__spacer"></span>
-				<button type="button" class="btn" data-action="cancel-round">라운드 취소</button>
-				<button type="button" class="btn btn--primary" data-action="confirm-cut">탈락 확정 ▶</button>
+		case "results": {
+			const last = nextGame({ ...game, history: [...game.history, game.phase.round] }) === null;
+			return `<div class="ax-controls">
+				<div class="ax-tabs" role="group" aria-label="결과 보기">
+					<button type="button" class="ax-btn${view.resultsTab === "round" ? " is-selected" : ""}" data-action="tab-round">이번 라운드</button>
+					<button type="button" class="ax-btn${view.resultsTab === "total" ? " is-selected" : ""}" data-action="tab-total">누적 순위</button>
+				</div>
+				<span class="ax-controls__spacer"></span>
+				<button type="button" class="ax-btn" data-action="cancel-round">라운드 취소</button>
+				${last ? `<button type="button" class="ax-btn" data-action="confirm-round">확정만</button><button type="button" class="ax-btn ax-btn--go" data-action="confirm-finish">확정하고 최종 발표 ▶</button>` : `<button type="button" class="ax-btn ax-btn--go" data-action="confirm-round">결과 확정 ▶</button>`}
 			</div>`;
+		}
 		case "finished":
-			return `<div class="controls__row">
-				<span class="controls__spacer"></span>
-				<button type="button" class="btn" data-action="reset">처음부터 다시</button>
+			return `<div class="ax-controls">
+				<span class="ax-controls__spacer"></span>
+				<button type="button" class="ax-btn" data-action="reopen">계속하기</button>
+				<button type="button" class="ax-btn" data-action="reset">처음부터 다시</button>
 			</div>`;
 	}
 }
 
 function lobbyControls(game: GameState): string {
-	const participants = nextParticipants(game).length;
-	const upcoming = game.upcoming;
-	const cut = upcoming?.cutCount ?? suggestCutCount(participants);
-	const games = GAME_IDS.map((id) => {
-		const selected = upcoming?.gameId === id;
-		return `<button type="button" class="btn btn--game${selected ? " is-selected" : ""}" data-action="game" data-id="${id}" aria-pressed="${selected}">${GAMES[id].emoji} ${esc(GAMES[id].title)}</button>`;
-	}).join("");
-	const canStart = upcoming !== null && participants >= 1 && upcoming.cutCount <= participants - 1;
-	return `<div class="controls__row">
-		<div class="controls__group" role="group" aria-label="다음 게임">${games}</div>
-		<div class="controls__group stepper" role="group" aria-label="탈락 인원">
-			<button type="button" class="btn btn--icon" data-action="cut-down" ${upcoming === null || cut <= 0 ? "disabled" : ""} aria-label="탈락 인원 줄이기">−</button>
-			<span class="stepper__value"><b>${cut}</b>명 탈락</span>
-			<button type="button" class="btn btn--icon" data-action="cut-up" ${upcoming === null || cut >= participants - 1 ? "disabled" : ""} aria-label="탈락 인원 늘리기">+</button>
-			<span class="controls__hint">참가 ${participants}명 · 추천 ${suggestCutCount(participants)}명</span>
-		</div>
-		<span class="controls__spacer"></span>
-		${game.roundsPlayed === 0 ? `<button type="button" class="btn" data-action="roster">명단</button>` : ""}
-		<button type="button" class="btn" data-action="reset">처음부터</button>
-		<button type="button" class="btn btn--primary" data-action="start" ${canStart ? "" : "disabled"}>시작 ▶</button>
+	const next = nextGame(game);
+	const joined = joinedPlayers(game).length;
+	const canStart = next !== null && joined >= 1;
+	const startLabel = next === null ? "시작 ▶" : `R${game.history.length + 1} ${esc(GAMES[next].title)} 시작 ▶`;
+	return `<div class="ax-controls">
+		<button type="button" class="ax-btn" data-action="plan">순서표</button>
+		<button type="button" class="ax-btn" data-action="roster">명단</button>
+		<button type="button" class="ax-btn" data-action="reset">처음부터</button>
+		<span class="ax-controls__spacer"></span>
+		${game.history.length > 0 ? `<button type="button" class="ax-btn" data-action="finish">최종 순위 발표</button>` : ""}
+		<button type="button" class="ax-btn ax-btn--go" data-action="start" ${canStart ? "" : "disabled"}>${startLabel}</button>
 	</div>`;
 }
 
 function rosterEditor(game: GameState): string {
-	return `<section class="roster-edit">
-		<h2>명단</h2>
-		<p class="muted">한 줄에 한 명씩 적어 주세요. 이미 입장한 사람은 이름을 그대로 두면 입장이 유지돼요.</p>
+	return `<section class="ax-editor ax-box">
+		<h2 class="ax-editor__title">명단</h2>
+		<p class="ax-muted">한 줄에 한 명씩 적어 주세요. 이미 입장한 사람은 이름을 그대로 두면 입장과 기록이 유지돼요. 이름을 지우면 그 사람 기록도 순위에서 빠져요.</p>
 		<textarea id="roster-text" rows="14" spellcheck="false">${esc(game.players.map((player) => player.name).join("\n"))}</textarea>
-		<div class="roster-edit__actions">
-			<button type="button" class="btn" data-action="roster-close">닫기</button>
-			<button type="button" class="btn btn--primary" data-action="roster-save">저장</button>
+		<div class="ax-editor__actions">
+			<button type="button" class="ax-btn" data-action="roster-close">닫기</button>
+			<button type="button" class="ax-btn ax-btn--go" data-action="roster-save">저장</button>
 		</div>
 	</section>`;
 }
@@ -375,59 +306,67 @@ function handleClick(event: MouseEvent, send: (message: HostMessage) => void): v
 	const game = view.game;
 	if (target === null || game === null) return;
 	const id = target.dataset.id ?? "";
-	const participants = nextParticipants(game).length;
-	switch (target.dataset.action) {
-		case "game":
-			return send({
-				type: "prepareRound",
-				gameId: GAME_IDS.find((gameId) => gameId === id) ?? "balloon",
-				cutCount: game.upcoming?.cutCount ?? suggestCutCount(participants),
-			});
-		case "cut-down":
-		case "cut-up": {
-			if (game.upcoming === null) return;
-			const change = target.dataset.action === "cut-up" ? 1 : -1;
-			const cutCount = Math.min(Math.max(game.upcoming.cutCount + change, 0), Math.max(participants - 1, 0));
-			return send({ type: "prepareRound", gameId: game.upcoming.gameId, cutCount });
-		}
+	const action = target.dataset.action ?? "";
+	switch (action) {
 		case "start":
 			return send({ type: "startRound" });
 		case "close-round":
 			return send({ type: "closeRound" });
 		case "cancel-round":
-			if (confirm("이번 라운드를 없던 일로 할까요? 아무도 탈락하지 않아요.")) send({ type: "cancelRound" });
+			if (confirm("이번 라운드를 없던 일로 할까요? 점수 없이 같은 게임을 다시 해요.")) send({ type: "cancelRound" });
 			return;
-		case "toggle-cut":
-			return send({ type: "toggleCut", playerId: id });
-		case "confirm-cut":
-			return send({ type: "confirmCut" });
+		case "confirm-round":
+			return send({ type: "confirmRound" });
+		case "confirm-finish":
+			send({ type: "confirmRound" });
+			return send({ type: "finishGame" });
+		case "finish":
+			if (confirm("최종 순위를 발표할까요? '계속하기'로 다시 돌아올 수 있어요.")) send({ type: "finishGame" });
+			return;
+		case "reopen":
+			return send({ type: "reopenGame" });
+		case "reset":
+			if (confirm("처음부터 다시 할까요? 입장과 순서표는 그대로 두고 라운드 기록만 지워요.")) send({ type: "reset" });
+			return;
+		case "tab-round":
+			return update({ resultsTab: "round" });
+		case "tab-total":
+			return update({ resultsTab: "total" });
 		case "select":
 			return update({ selected: view.selected === id ? null : id });
-		case "alive":
-		case "out":
-			update({ selected: null });
-			return send({ type: "setStatus", playerId: id, status: target.dataset.action === "alive" ? "alive" : "out" });
 		case "release":
 			if (confirm("입장을 풀면 그 사람 폰은 이름 고르기 화면으로 돌아가요. 풀까요?")) send({ type: "release", playerId: id });
 			return update({ selected: null });
-		case "reset":
-			if (confirm("처음부터 다시 할까요? 입장한 사람은 그대로 두고 탈락·라운드 기록만 지워요.")) send({ type: "reset" });
-			return;
 		case "roster":
-			view = { ...view, editingRoster: true };
+			view = { ...view, editing: "roster" };
 			paintedStage = null;
 			stage.innerHTML = rosterEditor(game);
 			return render();
 		case "roster-close":
-			return update({ editingRoster: false });
+			return update({ editing: null });
 		case "roster-save": {
 			const text = pick<HTMLTextAreaElement>(stage, "#roster-text").value;
+			const before = new Set(game.players.map((player) => player.name));
 			const names = text
 				.split("\n")
 				.map((name) => name.trim())
 				.filter((name) => name.length > 0);
+			const removed = [...before].filter((name) => !names.includes(name));
+			if (removed.length > 0 && game.history.length > 0 && !confirm(`${removed.join(", ")} 님을 빼면 그 사람 기록도 순위에서 빠져요. 저장할까요?`)) return;
 			send({ type: "setRoster", names });
-			return update({ editingRoster: false });
+			return update({ editing: null });
 		}
+		case "plan":
+			return update({ editing: "plan", draft: game.plan.slice(lockedPlanLength(game)) });
+		case "plan-add":
+		case "plan-remove":
+		case "plan-up":
+		case "plan-down":
+			return update({ draft: editDraft(view.draft, action, Number(target.dataset.index ?? -1), isGameId(id) ? id : null) });
+		case "plan-close":
+			return update({ editing: null });
+		case "plan-save":
+			send({ type: "setPlan", gameIds: view.draft });
+			return update({ editing: null });
 	}
 }

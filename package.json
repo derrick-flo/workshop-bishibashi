@@ -12,7 +12,8 @@
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit && tsc --noEmit -p src/client",
 		"cf-typegen": "wrangler types",
-		"rehearsal": "esbuild scripts/rehearsal.ts --bundle --platform=node --format=esm --outfile=.wrangler/rehearsal.mjs --log-level=warning && node .wrangler/rehearsal.mjs"
+		"rehearsal": "esbuild scripts/rehearsal.ts --bundle --platform=node --format=esm --outfile=.wrangler/rehearsal.mjs --log-level=warning && node .wrangler/rehearsal.mjs",
+		"crowd": "esbuild scripts/crowd.ts --bundle --platform=node --format=esm --outfile=.wrangler/crowd.mjs --log-level=warning && node .wrangler/crowd.mjs"
 	},
 	"devDependencies": {
 		"esbuild": "^0.28.2",
