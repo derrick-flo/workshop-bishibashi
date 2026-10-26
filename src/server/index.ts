@@ -1,3 +1,4 @@
+import { needsHostKey } from "../host-access";
 import { ROLE_HEADER } from "./room";
 import { isHostKey } from "./secrets";
 
@@ -6,6 +7,7 @@ export { GameRoom } from "./room";
 /**
  * 화면(index.html, host.html)은 정적 파일로 나가고, 여기는 /ws 연결만 받는다.
  * 진행자 화면은 /ws?role=host&key=... 로 붙고, 키가 맞을 때만 진행자 권한을 준다.
+ * 내 컴퓨터·사내망 주소로 연 테스트 서버는 키 없이 진행자 권한을 준다(needsHostKey).
  */
 export default {
 	async fetch(request, env): Promise<Response> {
@@ -14,7 +16,7 @@ export default {
 		if (request.headers.get("Upgrade") !== "websocket") return new Response("WebSocket only", { status: 426 });
 
 		const wantsHost = url.searchParams.get("role") === "host";
-		if (wantsHost && !(await isHostKey(url.searchParams.get("key"), env.HOST_KEY))) {
+		if (wantsHost && needsHostKey(url.hostname) && !(await isHostKey(url.searchParams.get("key"), env.HOST_KEY))) {
 			return new Response("Forbidden", { status: 403 });
 		}
 		const headers = new Headers(request.headers);

@@ -1,6 +1,7 @@
 import { type GameState, joinedPlayers, lockedPlanLength, nextGame } from "../domain/game";
 import { GAMES, type GameId, isGameId } from "../domain/games/catalog";
 import type { PlayerId } from "../domain/player";
+import { needsHostKey } from "../host-access";
 import type { HostMessage, ServerMessage } from "../protocol";
 import { arcade } from "./arcade-sound";
 import { createServerClock } from "./clock";
@@ -82,10 +83,11 @@ function readHostKey(): string | null {
 
 const hostKey = readHostKey();
 
-if (hostKey === null) {
+// 내 컴퓨터·사내망 주소로 연 테스트 서버는 키 없이 바로 붙는다
+if (hostKey === null && needsHostKey(location.hostname)) {
 	showKeyGate("");
 } else {
-	const connection = connect(`/ws?role=host&key=${encodeURIComponent(hostKey)}`, {
+	const connection = connect(hostKey === null ? "/ws?role=host" : `/ws?role=host&key=${encodeURIComponent(hostKey)}`, {
 		onOpen: () => connection.send({ type: "hello", token: null }),
 		onMessage: handleMessage,
 		onStatus: (status) => {

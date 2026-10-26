@@ -8,6 +8,7 @@
 import { readFileSync } from "node:fs";
 import type { GameState, Round } from "../src/domain/game";
 import { GAMES, type GameId } from "../src/domain/games/catalog";
+import { needsHostKey } from "../src/host-access";
 import type { ClientMessage, ServerMessage } from "../src/protocol";
 
 const base = process.argv.find((arg) => arg.startsWith("http")) ?? "http://localhost:8787";
@@ -87,7 +88,8 @@ function submitter(): (socket: Socket) => void {
 }
 
 async function main(): Promise<void> {
-	const host = await open(`/ws?role=host&key=${encodeURIComponent(hostKey())}`, () => {});
+	const hostPath = needsHostKey(new URL(base).hostname) ? `/ws?role=host&key=${encodeURIComponent(hostKey())}` : "/ws?role=host";
+	const host = await open(hostPath, () => {});
 	host.send({ type: "hello", token: null });
 	const waitFor = async (check: () => boolean) => {
 		for (let i = 0; i < 100 && !check(); i++) await new Promise((resolve) => setTimeout(resolve, 50));

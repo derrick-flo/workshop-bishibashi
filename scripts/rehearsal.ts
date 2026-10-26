@@ -1,6 +1,6 @@
 /**
  * 리허설: 가상 참가자 30명이 실제 서버에 붙어 순서표대로 라운드를 돌고 최종 순위까지 확인한다.
- *   npm run rehearsal                      → http://localhost:8787 (진행자 키는 .dev.vars)
+ *   npm run rehearsal                      → http://localhost:8787 (내 컴퓨터 주소라 진행자 키 없이)
  *   npm run rehearsal -- --rounds=2        → 라운드 수를 줄여 빨리
  *   npm run rehearsal -- https://... --allow-remote   → 배포한 서버 (HOST_KEY 환경변수 필요)
  * 명단과 진행 상태를 덮어쓰기 때문에, localhost가 아니면 --allow-remote 없이는 실행하지 않는다.
@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { type GameState, nextGame, type Round } from "../src/domain/game";
 import { GAMES, type GameId } from "../src/domain/games/catalog";
 import { roundPoints, standings } from "../src/domain/standings";
+import { needsHostKey } from "../src/host-access";
 import type { ClientMessage, ServerMessage } from "../src/protocol";
 
 const PLAYER_COUNT = 30;
@@ -196,12 +197,13 @@ async function playRound(host: Bot, bots: Bot[], roundNo: number): Promise<Round
 }
 
 async function rehearse(): Promise<void> {
-	const key = hostKey();
 	console.log(`리허설 시작: ${base} (${PLAYER_COUNT}명, ${PLAN.length}라운드)`);
 
-	check(await isRefused(`/ws?role=host&key=wrong-key`), "틀린 진행자 키로는 진행자 화면에 붙을 수 없다");
+	const keyed = needsHostKey(new URL(base).hostname);
+	if (keyed) check(await isRefused(`/ws?role=host&key=wrong-key`), "틀린 진행자 키로는 진행자 화면에 붙을 수 없다");
+	else check(!(await isRefused("/ws?role=host")), "내 컴퓨터·사내망 주소에서는 진행자 키 없이 진행자 화면에 붙는다");
 
-	const host = await openBot("진행자", `/ws?role=host&key=${encodeURIComponent(key)}`);
+	const host = await openBot("진행자", keyed ? `/ws?role=host&key=${encodeURIComponent(hostKey())}` : "/ws?role=host");
 	host.send({ type: "hello", token: null });
 	await host.until(() => host.game !== null, "첫 상태");
 	if (host.game?.phase.kind === "playing" || host.game?.phase.kind === "results") host.send({ type: "cancelRound" });

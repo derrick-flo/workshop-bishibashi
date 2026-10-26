@@ -21,5 +21,6 @@
 		"command": "npm run build:client",
 		"watch_dir": "src"
 	}
-	// 진행자 키(HOST_KEY)는 여기 두지 않고 `wrangler secret put HOST_KEY`로 등록한다. 로컬은 .dev.vars.
+	// 진행자 키(HOST_KEY)는 여기 두지 않고 `wrangler secret put HOST_KEY`로 등록한다.
+	// 내 컴퓨터·사내망 주소로 연 로컬 서버는 키 없이 들어간다(src/host-access.ts).
 }
