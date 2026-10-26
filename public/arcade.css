@@ -1084,16 +1084,14 @@ body.host {
 	gap: calc(var(--hp) * 5);
 }
 
-.ax-round__title h1,
-.ax-results__title h1 {
+.ax-round__title h1 {
 	margin: 0;
 	color: var(--ax-white);
 	font-size: calc(var(--hp3) * 12);
 	font-weight: 400;
 }
 
-.ax-round__icon,
-.ax-results__icon {
+.ax-round__icon {
 	width: calc(var(--hp) * 56);
 	height: auto;
 }
@@ -1168,15 +1166,28 @@ body.host {
 	gap: calc(var(--hp) * 5);
 }
 
+/* 결과표가 한 화면에 들어가게 제목은 한 줄로 */
 .ax-results__head {
-	display: grid;
-	gap: calc(var(--hp) * 2);
+	display: flex;
+	align-items: center;
+	gap: calc(var(--hp) * 6);
 }
 
 .ax-results__title {
 	display: flex;
 	align-items: center;
-	gap: calc(var(--hp) * 4);
+	gap: calc(var(--hp) * 3);
+}
+
+.ax-results__title h1 {
+	margin: 0;
+	color: var(--ax-white);
+	font-size: calc(var(--hp2) * 12);
+	font-weight: 400;
+}
+
+.ax-results__icon {
+	width: calc(var(--hp) * 24);
 }
 
 .ax-ranking {
@@ -1192,7 +1203,7 @@ body.host {
 
 .ax-rank {
 	display: grid;
-	grid-template-columns: calc(var(--hps) * 24) minmax(0, 1fr) auto auto;
+	grid-template-columns: calc(var(--hp) * 22) minmax(0, 1fr) auto auto;
 	align-items: center;
 	gap: calc(var(--hp) * 3);
 	padding: var(--hp) calc(var(--hp) * 3);
@@ -1212,8 +1223,7 @@ body.host {
 	text-align: right;
 }
 
-/* 이름이 잘리지 않게 등수·기록·점수는 한 단계 작은 글자로 */
-.ax-rank__no,
+/* 이름이 잘리지 않게 기록·점수는 한 단계 작은 글자로 */
 .ax-rank__score,
 .ax-rank__points,
 .ax-rank .ax-move {
@@ -1284,7 +1294,7 @@ body.host {
 
 .ax-podium {
 	display: grid;
-	grid-template-columns: repeat(3, minmax(0, calc(var(--hp) * 100)));
+	grid-template-columns: repeat(3, minmax(0, calc(var(--hp) * 130)));
 	align-items: end;
 	gap: calc(var(--hp) * 4);
 }
@@ -1310,15 +1320,19 @@ body.host {
 }
 
 .ax-podium__name {
+	max-width: 100%;
 	margin: 0;
+	overflow: hidden;
 	color: var(--ax-white);
 	font-size: calc(var(--hp2) * 12);
 	line-height: 1.2;
+	white-space: nowrap;
+	text-overflow: ellipsis;
 }
 
 .ax-podium__place--1 .ax-podium__name {
 	color: var(--ax-yellow);
-	font-size: calc(var(--hp3) * 12);
+	animation: ax-flash 600ms steps(2) infinite;
 }
 
 .ax-podium__total {
@@ -1367,12 +1381,6 @@ body.host {
 		opacity: 1;
 		transform: none;
 	}
-}
-
-.ax-final-stage__all {
-	width: 100%;
-	animation: ax-reveal 400ms steps(4) both;
-	animation-delay: 5200ms;
 }
 
 .ax-confetti {

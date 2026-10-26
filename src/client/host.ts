@@ -124,8 +124,10 @@ function update(patch: Partial<View>): void {
 function handleMessage(message: ServerMessage): void {
 	if (message.type === "state") {
 		clock.sample(message.serverNow);
-		const enteringResults = message.game.phase.kind === "results" && view.game?.phase.kind !== "results";
-		return update({ game: message.game, onlineIds: message.onlineIds, ...(enteringResults ? { resultsTab: "round" as const } : {}) });
+		// 결과·최종 발표에 들어서면 이번 라운드(시상대) 탭부터 보여준다
+		const kind = message.game.phase.kind;
+		const entering = (kind === "results" || kind === "finished") && view.game?.phase.kind !== kind;
+		return update({ game: message.game, onlineIds: message.onlineIds, ...(entering ? { resultsTab: "round" as const } : {}) });
 	}
 	if (message.type === "rejected") notify(REJECTION_TEXT[message.reason] ?? `거절됨: ${message.reason}`);
 }
@@ -178,14 +180,18 @@ function stageHtml(game: GameState): string {
 		case "results":
 			return resultsStage(game, game.phase.round, stageOptions());
 		case "finished":
-			return finishedStage(game);
+			return finishedStage(game, view.resultsTab);
 	}
 }
 
 /** 결과를 한 줄씩 공개할 때 틱 소리, 최종 발표 때 색종이와 팡파르. 화면이 바뀔 때 한 번만. */
 function stageEffects(game: GameState): void {
 	const key =
-		game.phase.kind === "results" ? `results:${game.phase.round.no}:${view.resultsTab}` : game.phase.kind === "finished" ? `finished:${game.history.length}` : null;
+		game.phase.kind === "results"
+			? `results:${game.phase.round.no}:${view.resultsTab}`
+			: game.phase.kind === "finished"
+				? `finished:${game.history.length}:${view.resultsTab}`
+				: null;
 	if (key === null || key === revealedFor || view.editing !== null) {
 		if (key === null) revealedFor = null;
 		return;
@@ -196,7 +202,7 @@ function stageEffects(game: GameState): void {
 		for (let i = 0; i < count; i++) setTimeout(() => arcade.reveal(), 300 + i * 110);
 		setTimeout(() => arcade.jar(), 300 + count * 110);
 	}
-	if (game.phase.kind === "finished") {
+	if (game.phase.kind === "finished" && view.resultsTab === "round") {
 		setTimeout(() => arcade.drum(), 600);
 		setTimeout(() => arcade.drum(), 2000);
 		setTimeout(() => {
@@ -264,6 +270,10 @@ function controlsHtml(game: GameState): string {
 		}
 		case "finished":
 			return `<div class="ax-controls">
+				<div class="ax-tabs" role="group" aria-label="최종 순위 보기">
+					<button type="button" class="ax-btn${view.resultsTab === "round" ? " is-selected" : ""}" data-action="tab-round">시상대</button>
+					<button type="button" class="ax-btn${view.resultsTab === "total" ? " is-selected" : ""}" data-action="tab-total">전체 순위</button>
+				</div>
 				<span class="ax-controls__spacer"></span>
 				<button type="button" class="ax-btn" data-action="reopen">계속하기</button>
 				<button type="button" class="ax-btn" data-action="reset">처음부터 다시</button>

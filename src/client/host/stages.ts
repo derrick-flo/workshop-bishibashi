@@ -149,8 +149,12 @@ function standingTable(game: GameState, table: readonly Standing[], before: read
 	return `<ol class="ax-ranking ax-ranking--static">${rows.join("")}</ol>`;
 }
 
-export function finishedStage(game: GameState): string {
+/** 최종 발표. "round" 탭은 시상대, "total" 탭은 전체 순위표 */
+export function finishedStage(game: GameState, tab: StageOptions["resultsTab"]): string {
 	const table = standings(game.players, game.history);
+	if (tab === "total") {
+		return `<section class="ax-results"><header class="ax-results__head"><p class="ax-kicker">FINAL</p><h1 class="ax-section-title">전체 순위</h1></header>${standingTable(game, table, null)}</section>`;
+	}
 	const podium = [2, 1, 3]
 		.map((place) => {
 			const winners = table.filter((row) => row.rank === place);
@@ -167,6 +171,5 @@ export function finishedStage(game: GameState): string {
 	return `<section class="ax-final-stage">
 		<h1 class="ax-final-stage__title">최종 순위</h1>
 		<div class="ax-podium">${podium}</div>
-		<div class="ax-final-stage__all">${standingTable(game, table, null)}</div>
 	</section>`;
 }

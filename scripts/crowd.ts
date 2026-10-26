@@ -97,7 +97,9 @@ async function main(): Promise<void> {
 	if (host.game?.phase.kind === "finished") host.send({ type: "reopenGame" });
 	host.send({ type: "reset" });
 	const names = Array.from({ length: COUNT }, (_, i) => `참가자${String(i + 1).padStart(2, "0")}`);
+	// 명단을 비운 게 보인 뒤에 새 명단을 넣는다(예전 명단의 id로 입장하면 거절된다)
 	host.send({ type: "setRoster", names: [] });
+	await waitFor(() => host.game?.players.length === 0);
 	host.send({ type: "setRoster", names: [...names, "나"] });
 	if ((host.game?.plan.length ?? 0) === 0) host.send({ type: "setPlan", gameIds: DEFAULT_PLAN });
 	await waitFor(() => host.game?.players.length === COUNT + 1);
