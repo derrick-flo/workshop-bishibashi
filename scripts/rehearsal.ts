@@ -39,6 +39,8 @@ type Bot = {
 	playerId: string | null;
 	token: string | null;
 	readonly rejections: string[];
+	/** 서버가 바로 알려 준 '저장됨'(라운드 번호) */
+	readonly saved: number[];
 	send(message: ClientMessage): void;
 	until(check: () => boolean, label: string, timeoutMs?: number): Promise<void>;
 	close(): void;
@@ -54,6 +56,7 @@ async function openBot(name: string, path: string): Promise<Bot> {
 		playerId: null,
 		token: null,
 		rejections: [],
+		saved: [],
 		send: (message) => socket.send(JSON.stringify(message)),
 		until(check, label, timeoutMs = 15_000) {
 			if (check()) return Promise.resolve();
@@ -82,6 +85,8 @@ async function openBot(name: string, path: string): Promise<Bot> {
 		} else if (message.type === "you") {
 			bot.playerId = message.playerId;
 			if (message.token !== null) bot.token = message.token;
+		} else if (message.type === "saved") {
+			bot.saved.push(message.roundNo);
 		} else {
 			bot.rejections.push(message.reason);
 		}
@@ -160,9 +165,10 @@ async function playRound(host: Bot, bots: Bot[], roundNo: number): Promise<Round
 				current = await reconnect(bot, bots);
 			}
 			await sleep(round.endAt - current.offsetMs - Date.now() + randomInt(0, 1500));
-			current.send({ type: "submit", roundNo, score: randomInt(0, Math.floor(info.maxScore / 2)) });
+			current.send({ type: "submit", roundNo, playAt: round.playAt, score: randomInt(0, Math.floor(info.maxScore / 2)) });
+			await current.until(() => current.saved.includes(roundNo), "저장됨 응답");
 			if (current === doubleSubmitter) {
-				current.send({ type: "submit", roundNo, score: 1 });
+				current.send({ type: "submit", roundNo, playAt: round.playAt, score: 1 });
 				await current.until(() => current.rejections.includes("already_submitted"), "두 번째 기록 거절");
 			}
 		}),
@@ -172,7 +178,7 @@ async function playRound(host: Bot, bots: Bot[], roundNo: number): Promise<Round
 	const results = host.game?.phase;
 	if (results?.kind !== "results") throw new Error("결과가 없어요");
 	const expected = playing.length - (silent === undefined ? 0 : 1);
-	check(Object.keys(results.round.scores).length === expected, `라운드 ${roundNo}: 기록 ${expected}/${playing.length} 도착(끊겼다 붙은 ${reconnecting.size}명 포함)`);
+	check(Object.keys(results.round.scores).length === expected, `라운드 ${roundNo}: 기록 ${expected}/${playing.length} 도착, 모두 '저장됨' 응답 받음(끊겼다 붙은 ${reconnecting.size}명 포함)`);
 	if (silent?.playerId) check(roundPoints(results.round)[silent.playerId] === 0, "기록을 안 낸 사람은 마감 알람으로 라운드가 닫히고 0점");
 	if (doubleSubmitter !== undefined) check(true, "같은 사람의 두 번째 기록은 거절된다");
 	return results.round;
@@ -230,9 +236,20 @@ async function rehearse(): Promise<void> {
 			const gameId = nextGame(host.game);
 			host.send({ type: "startRound" });
 			await host.until(() => host.game?.phase.kind === "playing", "취소할 라운드 시작");
+			const cancelledPhase = host.game?.phase;
+			const oldPlayAt = cancelledPhase?.kind === "playing" ? cancelledPhase.round.playAt : 0;
 			host.send({ type: "cancelRound" });
 			await host.until(() => host.game?.phase.kind === "lobby", "라운드 취소");
 			check(host.game !== null && nextGame(host.game) === gameId && host.game.history.length === 3, "라운드를 취소하면 기록 없이 같은 게임이 다시 다음 차례");
+			// 취소된 판의 기록을 늦게 보내는 폰: 같은 번호로 다시 시작한 판에는 들어가면 안 된다
+			host.send({ type: "startRound" });
+			await host.until(() => host.game?.phase.kind === "playing" && host.game.phase.round.playAt !== oldPlayAt, "재경기 시작");
+			const stale = bots.find((bot) => bot.playerId !== null);
+			stale?.send({ type: "submit", roundNo: 4, playAt: oldPlayAt, score: 1 });
+			await stale?.until(() => stale.rejections.includes("wrong_round"), "취소된 판 기록 거절");
+			check(true, "취소된 판의 기록은 같은 번호로 다시 시작한 판에 들어가지 않는다");
+			host.send({ type: "cancelRound" });
+			await host.until(() => host.game?.phase.kind === "lobby", "재경기 시작 취소");
 		}
 		const round = await playRound(host, bots, roundNo);
 		host.send({ type: "confirmRound" });

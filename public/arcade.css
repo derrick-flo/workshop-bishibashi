@@ -996,6 +996,11 @@ body.host {
 	background: var(--ax-lime);
 }
 
+/* 라운드 사이 로비의 입장 관리(작게) */
+.ax-chips--compact .ax-chip {
+	font-size: calc(var(--hps) * 12);
+}
+
 .ax-chip-menu {
 	position: absolute;
 	top: 100%;

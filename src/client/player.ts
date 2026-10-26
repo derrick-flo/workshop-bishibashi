@@ -84,21 +84,30 @@ let view: View = {
 };
 let run: Run | null = null;
 let painted: string | null = null;
-let pending: Pending | null = readPending();
+let pending: Pending | null = null;
 const isPendingFor = (round: Pick<Round, "no" | "playAt">) => pending !== null && pending.roundNo === round.no && pending.playAt === round.playAt;
 let resendTimer = 0;
 let ackTimer = 0;
 let lastSubmitAt = Number.NEGATIVE_INFINITY;
+/** 입장 토큰. 저장소가 막힌 브라우저(사생활 보호 모드 등)에서도 이 화면이 살아 있는 동안은 다시 붙을 수 있게 메모리에도 둔다. */
+let token: string | null = store.get(TOKEN_KEY);
 let resultSoundFor = 0;
 let noticeTimer = 0;
 
 applyCrispUnits();
 
 const connection = connect("/ws", {
-	onOpen: () => connection.send({ type: "hello", token: store.get(TOKEN_KEY) }),
+	onOpen: () => connection.send({ type: "hello", token }),
 	onMessage: handleMessage,
 	onStatus: (status) => update({ status }),
 });
+// 새로고침 전에 못 보낸 기록이 있으면 다시 보내기 시작한다
+setPending(readPending());
+
+function setToken(next: string | null): void {
+	token = next;
+	store.set(TOKEN_KEY, next);
+}
 
 function update(patch: Partial<View>): void {
 	view = { ...view, ...patch };
@@ -113,11 +122,15 @@ function handleMessage(message: ServerMessage): void {
 			return flushPending(false);
 		case "you":
 			// 토큰이 무효가 됐거나(진행자가 입장을 풀었거나) 새로 입장했을 때 보관한 토큰을 바꾼다
-			if (message.token !== null) store.set(TOKEN_KEY, message.token);
-			if (message.playerId === null) store.set(TOKEN_KEY, null);
+			if (message.token !== null) setToken(message.token);
+			if (message.playerId === null) setToken(null);
 			update({ me: message.playerId, identified: true });
 			// 새 연결이면 보관한 기록을 바로 다시 보낸다
 			return flushPending(true);
+		case "saved":
+			if (!isPendingFor({ no: message.roundNo, playAt: message.playAt })) return;
+			markAck("saved");
+			return setPending(null);
 		case "rejected":
 			if (message.reason === "already_submitted") markAck("saved");
 			else if (DROP_PENDING_ON.has(message.reason)) markAck("lost");
@@ -182,7 +195,7 @@ function flushPending(force: boolean): void {
 		return setPending(null);
 	}
 	if (!force && performance.now() - lastSubmitAt < MIN_RESEND_GAP_MS) return;
-	if (connection.send({ type: "submit", roundNo: pending.roundNo, score: pending.score })) lastSubmitAt = performance.now();
+	if (connection.send({ type: "submit", roundNo: pending.roundNo, playAt: pending.playAt, score: pending.score })) lastSubmitAt = performance.now();
 }
 
 /** 게임 화면의 '보내는 중…'을 결과에 맞게 바꾼다 */
@@ -240,7 +253,8 @@ function playResultSound(round: Round, me: Player): void {
 // ---------- 미니게임 한 판 ----------
 
 function startRun(round: Round, me: Player): void {
-	if (run !== null && run.roundNo === round.no) return;
+	// 같은 번호라도 취소 후 다시 시작한 판이면 새로 한다
+	if (run !== null && run.roundNo === round.no && run.playAt === round.playAt) return;
 	stopRun();
 	const info = GAMES[round.gameId];
 	const practice = !round.participantIds.includes(me.id);

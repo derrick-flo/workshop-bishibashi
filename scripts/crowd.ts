@@ -82,7 +82,7 @@ function submitter(): (socket: Socket) => void {
 		if (!round.participantIds.includes(socket.playerId)) return;
 		handled.add(round.no);
 		const delay = round.endAt - socket.offsetMs - Date.now() + randomInt(100, 1800);
-		setTimeout(() => socket.send({ type: "submit", roundNo: round.no, score: plausibleScore(round.gameId) }), Math.max(0, delay));
+		setTimeout(() => socket.send({ type: "submit", roundNo: round.no, playAt: round.playAt, score: plausibleScore(round.gameId) }), Math.max(0, delay));
 	};
 }
 

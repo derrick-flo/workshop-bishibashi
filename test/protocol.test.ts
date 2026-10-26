@@ -9,7 +9,7 @@ describe("parseClientMessage", () => {
 		expect(parse({ type: "hello", token: "abc" })).toEqual({ type: "hello", token: "abc" });
 		expect(parse({ type: "hello", token: null })).toEqual({ type: "hello", token: null });
 		expect(parse({ type: "claim", playerId: "p1" })).toEqual({ type: "claim", playerId: "p1" });
-		expect(parse({ type: "submit", roundNo: 2, score: 1679 })).toEqual({ type: "submit", roundNo: 2, score: 1679 });
+		expect(parse({ type: "submit", roundNo: 2, playAt: 1_004_000, score: 1679 })).toEqual({ type: "submit", roundNo: 2, playAt: 1_004_000, score: 1679 });
 	});
 
 	it("진행자 메시지를 해석한다", () => {
@@ -23,7 +23,7 @@ describe("parseClientMessage", () => {
 	});
 
 	it("필요한 필드만 남기고 나머지는 버린다", () => {
-		expect(parse({ type: "submit", roundNo: 1, score: 10, playerId: "p9" })).toEqual({ type: "submit", roundNo: 1, score: 10 });
+		expect(parse({ type: "submit", roundNo: 1, playAt: 5, score: 10, playerId: "p9" })).toEqual({ type: "submit", roundNo: 1, playAt: 5, score: 10 });
 	});
 
 	it("JSON이 아니거나 모르는 종류면 null", () => {
@@ -41,8 +41,9 @@ describe("parseClientMessage", () => {
 
 	it("필드 형식이 틀리면 null", () => {
 		expect(parse({ type: "claim", playerId: 1 })).toBeNull();
-		expect(parse({ type: "submit", roundNo: 1, score: "1000" })).toBeNull();
-		expect(parse({ type: "submit", roundNo: 1.5, score: 1000 })).toBeNull();
+		expect(parse({ type: "submit", roundNo: 1, playAt: 5, score: "1000" })).toBeNull();
+		expect(parse({ type: "submit", roundNo: 1.5, playAt: 5, score: 1000 })).toBeNull();
+		expect(parse({ type: "submit", roundNo: 1, score: 1000 })).toBeNull();
 		expect(parse({ type: "setPlan", gameIds: ["tetris"] })).toBeNull();
 		expect(parse({ type: "setPlan", gameIds: "eye" })).toBeNull();
 		expect(parse({ type: "setPlan", gameIds: Array.from({ length: PLAN_LIMIT + 1 }, () => "eye") })).toBeNull();
@@ -61,6 +62,6 @@ describe("isHostMessage", () => {
 		expect(isHostMessage({ type: "release", playerId: "p1" })).toBe(true);
 		expect(isHostMessage({ type: "claim", playerId: "p1" })).toBe(false);
 		expect(isHostMessage({ type: "hello", token: null })).toBe(false);
-		expect(isHostMessage({ type: "submit", roundNo: 1, score: 1 })).toBe(false);
+		expect(isHostMessage({ type: "submit", roundNo: 1, playAt: 5, score: 1 })).toBe(false);
 	});
 });

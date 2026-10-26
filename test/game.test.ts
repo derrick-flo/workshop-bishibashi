@@ -48,9 +48,15 @@ function playing(claimedIds: readonly string[], plan?: readonly GameId[]): GameS
 	return ok(startRound(lobbyWith(claimedIds, plan), 7, NOW));
 }
 
+/** 첫 라운드를 NOW에 시작했을 때의 판 */
+const R1 = { no: 1, playAt: 1_004_000 } as const;
+
+function keyOf(state: GameState): { readonly no: number; readonly playAt: number } {
+	return state.phase.kind === "playing" ? { no: state.phase.round.no, playAt: state.phase.round.playAt } : { no: 0, playAt: 0 };
+}
+
 function submitAll(state: GameState, scores: Readonly<Record<string, number>>): GameState {
-	const roundNo = state.phase.kind === "playing" ? state.phase.round.no : 0;
-	return Object.entries(scores).reduce((acc, [id, score]) => ok(submitScore(acc, id, roundNo, score, NOW + 16_500)), state);
+	return Object.entries(scores).reduce((acc, [id, score]) => ok(submitScore(acc, id, keyOf(state), score, NOW + 16_500)), state);
 }
 
 /** 한 라운드를 끝까지 치르고 확정한다 */
@@ -176,33 +182,39 @@ describe("기록 제출", () => {
 	const round = playing(["p1", "p2", "p3", "p4"]);
 
 	it("참가자가 마감 전에 낸 기록을 받는다", () => {
-		const state = ok(submitScore(round, "p1", 1, 1500, 1_016_500));
+		const state = ok(submitScore(round, "p1", R1, 1500, 1_016_500));
 		expect(state.phase.kind === "playing" && state.phase.round.scores).toEqual({ p1: 1500 });
 	});
 
 	it("같은 사람의 두 번째 기록은 받지 않는다", () => {
-		const state = ok(submitScore(round, "p1", 1, 1500, 1_016_500));
-		expect(submitScore(state, "p1", 1, 2000, 1_016_600)).toEqual({ ok: false, reason: "already_submitted" });
+		const state = ok(submitScore(round, "p1", R1, 1500, 1_016_500));
+		expect(submitScore(state, "p1", R1, 2000, 1_016_600)).toEqual({ ok: false, reason: "already_submitted" });
 	});
 
 	it("마감(게임 끝 + 8초)이 지나면 받지 않는다", () => {
-		expect(submitScore(round, "p1", 1, 1500, 1_024_000).ok).toBe(true);
-		expect(submitScore(round, "p1", 1, 1500, 1_024_001)).toEqual({ ok: false, reason: "too_late" });
+		expect(submitScore(round, "p1", R1, 1500, 1_024_000).ok).toBe(true);
+		expect(submitScore(round, "p1", R1, 1500, 1_024_001)).toEqual({ ok: false, reason: "too_late" });
 	});
 
 	it("참가자가 아니거나 다른 라운드 기록이면 받지 않는다", () => {
-		expect(submitScore(round, "p5", 1, 1500, 1_016_500)).toEqual({ ok: false, reason: "not_participant" });
-		expect(submitScore(round, "p1", 2, 1500, 1_016_500)).toEqual({ ok: false, reason: "wrong_round" });
+		expect(submitScore(round, "p5", R1, 1500, 1_016_500)).toEqual({ ok: false, reason: "not_participant" });
+		expect(submitScore(round, "p1", { ...R1, no: 2 }, 1500, 1_016_500)).toEqual({ ok: false, reason: "wrong_round" });
+	});
+
+	it("취소하고 같은 번호로 다시 시작한 판에는 이전 판 기록을 받지 않는다", () => {
+		const replay = ok(startRound(ok(cancelRound(round)), 9, NOW + 60_000));
+		expect(submitScore(replay, "p1", R1, 1500, NOW + 76_500)).toEqual({ ok: false, reason: "wrong_round" });
+		expect(submitScore(replay, "p1", { no: 1, playAt: NOW + 64_000 }, 1500, NOW + 76_500).ok).toBe(true);
 	});
 
 	it("라운드 중에 입장한 사람은 이번 라운드 참가자가 아니다", () => {
 		const lateJoin = ok(claim(round, "p5"));
-		expect(submitScore(lateJoin, "p5", 1, 1500, 1_016_500)).toEqual({ ok: false, reason: "not_participant" });
+		expect(submitScore(lateJoin, "p5", R1, 1500, 1_016_500)).toEqual({ ok: false, reason: "not_participant" });
 	});
 
 	it("음수, 소수, 게임 최대치를 넘는 점수는 받지 않는다", () => {
 		for (const score of [-1, 1.5, 2201, Number.NaN]) {
-			expect(submitScore(round, "p1", 1, score, 1_016_500)).toEqual({ ok: false, reason: "invalid_score" });
+			expect(submitScore(round, "p1", R1, score, 1_016_500)).toEqual({ ok: false, reason: "invalid_score" });
 		}
 	});
 

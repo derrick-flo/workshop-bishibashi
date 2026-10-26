@@ -6,7 +6,8 @@ import type { PlayerId } from "./domain/player";
 export type PlayerMessage =
 	| { readonly type: "hello"; readonly token: string | null }
 	| { readonly type: "claim"; readonly playerId: PlayerId }
-	| { readonly type: "submit"; readonly roundNo: number; readonly score: number };
+	/** playAt은 어느 판의 기록인지 가리킨다(같은 번호로 다시 한 판과 구분) */
+	| { readonly type: "submit"; readonly roundNo: number; readonly playAt: number; readonly score: number };
 
 /** 진행자 화면 → 서버 */
 export type HostMessage =
@@ -35,6 +36,8 @@ export type ServerMessage =
 	  }
 	/** 이 연결이 누구인지. 처음 입장할 때만 token을 준다(폰이 보관). */
 	| { readonly type: "you"; readonly playerId: PlayerId | null; readonly token: string | null }
+	/** 이 폰의 기록을 저장했다. 전체 상태가 오기 전에 바로 알려서 폰이 다시 보내지 않게 한다. */
+	| { readonly type: "saved"; readonly roundNo: number; readonly playAt: number }
 	| { readonly type: "rejected"; readonly reason: string };
 
 const LIMITS = { id: 64, token: 128, name: 30, roster: 100 } as const;
@@ -60,7 +63,8 @@ const PARSERS: Readonly<Record<ClientMessage["type"], (fields: Fields) => Client
 		return isText(token, LIMITS.token) ? { type: "hello", token } : null;
 	},
 	claim: ({ playerId }) => (isText(playerId, LIMITS.id) ? { type: "claim", playerId } : null),
-	submit: ({ roundNo, score }) => (isInteger(roundNo) && typeof score === "number" ? { type: "submit", roundNo, score } : null),
+	submit: ({ roundNo, playAt, score }) =>
+		isInteger(roundNo) && isInteger(playAt) && typeof score === "number" ? { type: "submit", roundNo, playAt, score } : null,
 	setRoster: ({ names }) => {
 		const parsed = parseNames(names);
 		return parsed === null ? null : { type: "setRoster", names: parsed };

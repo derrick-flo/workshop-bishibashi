@@ -56,7 +56,12 @@ let view: View = {
 let paintedStage: string | null = null;
 let paintedControls: string | null = null;
 let noticeTimer = 0;
-let lastCountdown: number | null = null;
+/** 앞 화면 카운트다운 소리를 판(playAt)마다 한 번씩만 내도록 마지막으로 낸 소리를 기억한다 */
+let lastCue: string | null = null;
+/** 진행 버튼을 다시 그린 시각. 바로 뒤의 클릭은 더블클릭의 두 번째로 보고 무시한다. */
+let controlsPaintedAt = 0;
+/** 진행 버튼 자리가 바뀐 직후 이 시간 안의 클릭은 무시한다(더블클릭이 다음 단계 버튼을 누르지 않게) */
+const CONTROLS_GUARD_MS = 400;
 /** 결과 공개·시상대 연출을 한 번만 하도록 기억한다 */
 let revealedFor: string | null = null;
 
@@ -91,12 +96,18 @@ if (hostKey === null) {
 		if (!connection.send(message)) notify("연결이 끊겨서 보내지 못했어요.");
 	};
 	stage.addEventListener("click", (event) => handleClick(event, send));
-	controls.addEventListener("click", (event) => handleClick(event, send));
+	controls.addEventListener("click", (event) => {
+		if (performance.now() - controlsPaintedAt < CONTROLS_GUARD_MS) return;
+		handleClick(event, send);
+	});
 	requestAnimationFrame(tickClock);
 }
 
 function showKeyGate(message: string): void {
 	sessionStorage.removeItem(KEY_STORE);
+	// 다시 그릴 때 예전 화면과 같다고 건너뛰지 않게 기억을 지운다
+	paintedStage = null;
+	paintedControls = null;
 	controls.innerHTML = "";
 	stage.innerHTML = `<section class="ax-gate ax-box">
 		<h1 class="ax-logo"><span>진행자</span><b>비시바시</b></h1>
@@ -158,12 +169,12 @@ function paintStage(html: string): void {
 	if (paintedStage === html) return;
 	paintedStage = html;
 	stage.innerHTML = html;
-	lastCountdown = null;
 }
 
 function paintControls(html: string): void {
 	if (paintedControls === html) return;
 	paintedControls = html;
+	controlsPaintedAt = performance.now();
 	controls.innerHTML = html;
 }
 
@@ -213,6 +224,13 @@ function stageEffects(game: GameState): void {
 	}
 }
 
+/** 같은 소리를 두 번 내지 않는다(화면을 다시 그려도) */
+function cue(key: string, play: () => void): void {
+	if (lastCue === key) return;
+	lastCue = key;
+	play();
+}
+
 /** 앞 화면 카운트다운·남은 시간 막대·기록 기다리는 사람 표시. 상태 메시지 없이도 매 프레임 움직인다. */
 function tickClock(): void {
 	requestAnimationFrame(tickClock);
@@ -226,18 +244,15 @@ function tickClock(): void {
 	if (now < playAt) {
 		const seconds = Math.ceil((playAt - now) / 1000);
 		clockText.textContent = seconds > 3 ? "READY" : String(seconds);
-		if (seconds <= 3 && seconds !== lastCountdown) sfx.tick();
-		lastCountdown = seconds;
+		if (seconds <= 3) cue(`${playAt}:${seconds}`, sfx.tick);
 		bar.style.transform = "scaleX(1)";
 	} else if (now <= endAt) {
-		if (lastCountdown !== 0) sfx.go();
-		lastCountdown = 0;
+		cue(`${playAt}:go`, sfx.go);
 		clockText.textContent = ((endAt - now) / 1000).toFixed(1);
 		// 막대는 칸 단위로 줄어든다(부드럽게 줄면 픽셀 느낌이 깨진다)
 		bar.style.transform = `scaleX(${Math.ceil(((endAt - now) / (endAt - playAt)) * 40) / 40})`;
 	} else {
-		if (lastCountdown !== -1) sfx.end();
-		lastCountdown = -1;
+		cue(`${playAt}:end`, sfx.end);
 		clockText.textContent = "집계 중";
 		bar.style.transform = "scaleX(0)";
 	}

@@ -23,6 +23,12 @@ export type Round = {
 	readonly scores: Scores;
 };
 
+/**
+ * 기록을 어느 판에 낸 것인지. 라운드 번호는 취소 후 재경기나 처음부터 다시 할 때 다시 쓰이므로
+ * 시작 시각까지 맞아야 같은 판으로 본다.
+ */
+export type RoundKey = { readonly no: number; readonly playAt: number };
+
 /** 확정한 라운드. 순위와 점수는 기록에서 다시 계산한다(standings.ts). */
 export type RoundResult = {
 	readonly no: number;
@@ -146,10 +152,10 @@ export function startRound(state: GameState, seed: number, now: number): Transit
 	return accept({ ...state, phase: { kind: "playing", round } });
 }
 
-export function submitScore(state: GameState, playerId: PlayerId, roundNo: number, score: number, now: number): Transition {
+export function submitScore(state: GameState, playerId: PlayerId, key: RoundKey, score: number, now: number): Transition {
 	if (state.phase.kind !== "playing") return reject("wrong_phase");
 	const { round } = state.phase;
-	if (round.no !== roundNo) return reject("wrong_round");
+	if (round.no !== key.no || round.playAt !== key.playAt) return reject("wrong_round");
 	if (!round.participantIds.includes(playerId)) return reject("not_participant");
 	if (round.scores[playerId] !== undefined) return reject("already_submitted");
 	if (now > round.deadlineAt) return reject("too_late");

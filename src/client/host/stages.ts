@@ -84,7 +84,8 @@ export function lobbyStage(game: GameState, options: StageOptions): string {
 		<div class="ax-lobby__main">
 			${nextCard(game)}
 			${planStrip(game)}
-			<p class="ax-muted">입장 ${joined}명 · 라운드 ${game.history.length}개 끝남</p>
+			<p class="ax-muted">입장 ${joined} / ${game.players.length} · 라운드 ${game.history.length}개 끝남 · 이름을 누르면 입장을 풀 수 있어요</p>
+			<div class="ax-chips--compact">${chips(game, options)}</div>
 		</div>
 		<div class="ax-lobby__side">
 			<h2 class="ax-section-title">지금 순위</h2>

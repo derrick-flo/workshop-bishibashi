@@ -25,8 +25,11 @@ import { hashToken, newToken } from "./secrets";
 /** Worker가 진행자 키를 확인한 뒤 붙여 주는 헤더. 폰이 보낸 같은 이름의 헤더는 Worker가 덮어쓴다. */
 export const ROLE_HEADER = "x-bishibashi-role";
 
-/** 상태가 잇달아 바뀌면(라운드 끝에 30명이 한꺼번에 기록을 낼 때 등) 이만큼 모았다가 한 번만 보낸다 */
-const BROADCAST_DELAY_MS = 40;
+/**
+ * 상태가 잇달아 바뀌면 이만큼 모았다가 한 번만 보낸다. 게임 중에는 라운드 끝에 30명의 기록이 몰리므로 더 길게 모은다
+ * (기록을 낸 폰에는 'saved'를 바로 보내니 늦어도 괜찮다).
+ */
+const BROADCAST_DELAY_MS = { playing: 250, other: 40 } as const;
 
 type Role = "host" | "player";
 
@@ -70,17 +73,18 @@ export class GameRoom extends DurableObject<Env> {
 		return this.handleHost(ws, message);
 	}
 
+	// 여러 폰이 한꺼번에 다시 붙을 때 몰아서 보내도록 연결이 닫혀도 바로 보내지 않는다(닫힌 연결은 broadcast가 뺀다)
 	override async webSocketClose(ws: WebSocket): Promise<void> {
 		try {
 			ws.close(1000, "bye");
 		} catch {
 			// 이미 닫힌 연결
 		}
-		this.broadcast(ws);
+		this.scheduleBroadcast();
 	}
 
-	override async webSocketError(ws: WebSocket): Promise<void> {
-		this.broadcast(ws);
+	override async webSocketError(): Promise<void> {
+		this.scheduleBroadcast();
 	}
 
 	/** 기록 마감 시각에 울린다. 기록을 다 받지 못했어도 라운드를 닫는다. */
@@ -107,19 +111,24 @@ export class GameRoom extends DurableObject<Env> {
 				// 해시를 계산하는 동안 들어온 같은 이름 요청이 거절되도록 상태부터 바꾼다.
 				this.game = claimed.state;
 				const token = newToken();
-				this.claims = { ...this.claims, [await hashToken(token)]: message.playerId };
+				// 해시를 먼저 구한 뒤 합친다(기다리는 사이 다른 입장으로 바뀐 claims를 덮어쓰지 않게)
+				const hash = await hashToken(token);
+				this.claims = { ...this.claims, [hash]: message.playerId };
 				ws.serializeAttachment({ ...attachment, playerId: message.playerId } satisfies Attachment);
 				send(ws, { type: "you", playerId: message.playerId, token });
 				return this.apply(this.game);
 			}
 			case "submit": {
 				if (attachment.playerId === null) return send(ws, { type: "rejected", reason: "not_joined" });
-				const submitted = submitScore(this.game, attachment.playerId, message.roundNo, message.score, Date.now());
+				const key = { no: message.roundNo, playAt: message.playAt };
+				const submitted = submitScore(this.game, attachment.playerId, key, message.score, Date.now());
 				if (!submitted.ok) return send(ws, { type: "rejected", reason: submitted.reason });
 				const { phase } = submitted.state;
 				const everyoneIn = phase.kind === "playing" && isRoundComplete(phase.round);
 				const closed = everyoneIn ? closeRound(submitted.state) : submitted;
-				return this.apply(closed.ok ? closed.state : submitted.state);
+				await this.apply(closed.ok ? closed.state : submitted.state);
+				// 저장까지 끝났으니 이 폰에만 바로 알린다(모아 보내는 전체 상태를 기다리지 않게)
+				return send(ws, { type: "saved", roundNo: message.roundNo, playAt: message.playAt });
 			}
 		}
 	}
@@ -137,8 +146,11 @@ export class GameRoom extends DurableObject<Env> {
 
 	private hostTransition(message: HostMessage): Transition {
 		switch (message.type) {
-			case "setRoster":
-				return setRoster(this.game, message.names, () => crypto.randomUUID());
+			case "setRoster": {
+				// 상태를 모든 폰에 자주 보내므로 id는 짧게(8자리). 이미 쓰는 id와 겹치지 않게 고른다.
+				const taken = new Set(this.game.players.map((player) => player.id));
+				return setRoster(this.game, message.names, () => uniqueShortId(taken));
+			}
 			case "setPlan":
 				return setPlan(this.game, message.gameIds);
 			case "startRound":
@@ -173,10 +185,11 @@ export class GameRoom extends DurableObject<Env> {
 	/** 곧 지금 상태를 모두에게 보낸다. 이미 보내기로 했으면 그때 최신 상태가 나간다. */
 	private scheduleBroadcast(): void {
 		if (this.broadcastTimer !== null) return;
+		const delay = this.game.phase.kind === "playing" ? BROADCAST_DELAY_MS.playing : BROADCAST_DELAY_MS.other;
 		this.broadcastTimer = setTimeout(() => {
 			this.broadcastTimer = null;
-			this.broadcast(null);
-		}, BROADCAST_DELAY_MS);
+			this.broadcast();
+		}, delay);
 	}
 
 	private async playerIdOf(token: string): Promise<PlayerId | null> {
@@ -197,9 +210,9 @@ export class GameRoom extends DurableObject<Env> {
 		}
 	}
 
-	/** 지금 상태를 모든 화면에 보낸다. 닫히는 중인 연결(leaving)은 접속자에서 뺀다. */
-	private broadcast(leaving: WebSocket | null): void {
-		const sockets = this.ctx.getWebSockets().filter((ws) => ws !== leaving);
+	/** 지금 상태를 열려 있는 모든 화면에 보낸다. 닫히는 중이거나 닫힌 연결은 접속자에서 뺀다. */
+	private broadcast(): void {
+		const sockets = this.ctx.getWebSockets().filter((ws) => ws.readyState === WebSocket.OPEN);
 		const onlineIds = [...new Set(sockets.map((ws) => attachmentOf(ws).playerId).filter((id) => id !== null))];
 		const json = JSON.stringify({ type: "state", game: this.game, onlineIds, serverNow: Date.now() } satisfies ServerMessage);
 		for (const ws of sockets) {
@@ -208,6 +221,17 @@ export class GameRoom extends DurableObject<Env> {
 			} catch {
 				// 끊긴 연결은 닫힘 이벤트 때 정리된다
 			}
+		}
+	}
+}
+
+/** 8자리 id. taken에 없는 것을 골라 taken에 넣는다(같은 명단 안에서도 겹치지 않게). */
+function uniqueShortId(taken: Set<string>): string {
+	for (;;) {
+		const id = crypto.randomUUID().slice(0, 8);
+		if (!taken.has(id)) {
+			taken.add(id);
+			return id;
 		}
 	}
 }
