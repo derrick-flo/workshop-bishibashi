@@ -1,0 +1,29 @@
+# 라즈베리파이에서 Cloudflare Tunnel + Traefik 뒤에 띄우기:
+#   HOST_KEY=... docker compose -f compose.pi.yml up -d --build → https://bishibashi.gaonstack.dev (진행자 화면 /host)
+# cloudflared 가 bishibashi.gaonstack.dev 를 traefik:80 으로 넘기고, Traefik 이 아래 라벨을 보고 이 컨테이너 8787 로 보낸다.
+# Traefik 과 같은 proxy-net(external) 네트워크에 붙어야 한다.
+# 포트는 열지 않는다. 사내망 주소(192.168.x.x:8787)로 열면 진행자 키 없이 진행자 화면이 열리기 때문이다.
+# 도메인으로 들어오면 늘 진행자 키가 필요하므로 HOST_KEY 없이는 띄우지 않는다.
+services:
+  bishibashi:
+    build: .
+    image: workshop-bishibashi:local
+    restart: unless-stopped
+    environment:
+      HOST_KEY: ${HOST_KEY:?HOST_KEY 를 넣어 주세요}
+    volumes:
+      - bishibashi-data:/app/data
+    networks:
+      - proxy-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bishibashi.rule=Host(`bishibashi.gaonstack.dev`)"
+      - "traefik.http.routers.bishibashi.entrypoints=web"
+      - "traefik.http.services.bishibashi.loadbalancer.server.port=8787"
+
+volumes:
+  bishibashi-data:
+
+networks:
+  proxy-net:
+    external: true
