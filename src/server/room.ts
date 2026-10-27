@@ -33,7 +33,7 @@ export const ROLE_HEADER = "x-bishibashi-role";
  */
 const BROADCAST_DELAY_MS = { playing: 250, other: 40 } as const;
 
-type Role = "host" | "player";
+export type Role = "host" | "player";
 
 /** 연결마다 붙여 두는 정보. Durable Object가 잠들었다 깨어나도 남는다. */
 type Attachment = { readonly role: Role; readonly playerId: PlayerId | null };
@@ -61,9 +61,14 @@ export class GameRoom extends DurableObject<Env> {
 		if (request.headers.get("Upgrade") !== "websocket") return new Response("WebSocket only", { status: 426 });
 		const role: Role = request.headers.get(ROLE_HEADER) === "host" ? "host" : "player";
 		const { 0: client, 1: server } = new WebSocketPair();
-		this.ctx.acceptWebSocket(server);
-		server.serializeAttachment({ role, playerId: null } satisfies Attachment);
+		this.accept(server, role);
 		return new Response(null, { status: 101, webSocket: client });
+	}
+
+	/** 새 연결을 맡는다. Node 서버(src/node)는 fetch 없이 이걸로 연결을 넘긴다. */
+	accept(ws: WebSocket, role: Role): void {
+		this.ctx.acceptWebSocket(ws);
+		ws.serializeAttachment({ role, playerId: null } satisfies Attachment);
 	}
 
 	override async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {

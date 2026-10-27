@@ -3,3 +3,5 @@ node_modules/
 .dev.vars
 public/js/
 public/fonts/
+dist/
+data/

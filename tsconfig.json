@@ -11,5 +11,7 @@
 		"noEmit": true,
 		"skipLibCheck": true
 	},
-	"include": ["src/server", "src/domain", "src/protocol.ts", "test", "worker-configuration.d.ts"]
+	"include": ["src/server", "src/domain", "src/protocol.ts", "test", "worker-configuration.d.ts"],
+	// Node 서버 테스트는 Node 타입이 필요해서 src/node/tsconfig.json 에서 따로 검사한다
+	"exclude": ["test/node"]
 }
