@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assetPath } from "../../src/node/static";
+import { assetPath, withoutTrailingSlash } from "../../src/node/static";
 
 describe("Node 서버의 정적 파일 주소", () => {
 	it.each([
@@ -18,4 +18,12 @@ describe("Node 서버의 정적 파일 주소", () => {
 			expect(assetPath(pathname)).toBeNull();
 		},
 	);
+
+	it("끝에 / 를 붙인 화면 주소는 상대 주소로 / 없는 주소에 보낸다(하위 경로 아래에서도 맞게)", () => {
+		expect(withoutTrailingSlash("/host/", "")).toBe("../host");
+		expect(withoutTrailingSlash("/host/", "?key=abc")).toBe("../host?key=abc");
+		expect(withoutTrailingSlash("/", "")).toBeNull();
+		expect(withoutTrailingSlash("//", "")).toBeNull();
+		expect(withoutTrailingSlash("/host", "")).toBeNull();
+	});
 });

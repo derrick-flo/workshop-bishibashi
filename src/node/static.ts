@@ -36,11 +36,30 @@ export function assetPath(pathname: string): string | null {
 	return extname(relative) === "" ? `${relative}.html` : relative;
 }
 
+/**
+ * 끝에 / 를 붙인 화면 주소(/host/)를 / 없는 주소로 보낼 곳. Cloudflare 정적 파일과 같게 하려는 것이고,
+ * 상대 주소(../host)라 하위 경로(/bishibashi/host/) 아래에서도 맞다. 보낼 필요가 없으면 null.
+ */
+export function withoutTrailingSlash(pathname: string, search: string): string | null {
+	if (!pathname.endsWith("/")) return null;
+	const last = pathname
+		.split("/")
+		.filter((segment) => segment !== "")
+		.at(-1);
+	return last === undefined ? null : `../${last}${search}`;
+}
+
 /** public 폴더의 파일을 내려준다. 파일 이름에 해시가 없으니 매번 다시 확인하게 하고(no-cache), 같으면 304. */
 export async function serveStatic(root: string, request: IncomingMessage, response: ServerResponse): Promise<void> {
 	if (request.method !== "GET" && request.method !== "HEAD") return reply(response, 405, "Method Not Allowed", { Allow: "GET, HEAD" });
-	const { pathname } = new URL(request.url ?? "/", "http://localhost");
+	const { pathname, search } = new URL(request.url ?? "/", "http://localhost");
 	if (pathname === "/ws") return reply(response, 426, "WebSocket only");
+	const location = withoutTrailingSlash(pathname, search);
+	if (location !== null) {
+		response.writeHead(307, { Location: location, "Cache-Control": "no-cache" });
+		response.end();
+		return;
+	}
 	const relative = assetPath(pathname);
 	const file = relative === null ? null : await fileAt(join(root, relative));
 	if (file === null) return reply(response, 404, "Not found");
