@@ -18,9 +18,18 @@ export type StageOptions = {
 
 const nameOf = (game: GameState, id: PlayerId) => game.players.find((player) => player.id === id)?.name ?? "?";
 
+/** 폰이 들어올 주소. 진행자 화면과 같은 경로 아래라 하위 경로(예: /bishibashi/)에 올려도 맞다. */
+const joinUrl = (): URL => new URL(".", location.href);
+
+/** QR 아래 적는 주소. 앞의 https:// 와 끝의 / 는 뺀다(예: csd.example.com/bishibashi). */
+function joinLabel(): string {
+	const url = joinUrl();
+	return url.host + url.pathname.replace(/\/$/, "");
+}
+
 function joinQr(): string {
 	const qr = qrcode(0, "M");
-	qr.addData(`${location.origin}/`);
+	qr.addData(joinUrl().href);
 	qr.make();
 	return qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
 }
@@ -68,7 +77,7 @@ export function lobbyStage(game: GameState, options: StageOptions): string {
 			<div class="ax-join ax-box">
 				<h1 class="ax-logo"><span>워크샵</span><b>비시바시</b></h1>
 				<div class="ax-join__qr">${joinQr()}</div>
-				<p class="ax-join__url">${esc(location.host)}</p>
+				<p class="ax-join__url">${esc(joinLabel())}</p>
 				<p class="ax-join__hint ax-blink">폰 카메라로 찍고 이름을 눌러요</p>
 			</div>
 			<div class="ax-lobby__side">

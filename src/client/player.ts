@@ -97,7 +97,7 @@ let noticeTimer = 0;
 
 applyCrispUnits();
 
-const connection = connect("/ws", {
+const connection = connect("ws", {
 	onOpen: () => connection.send({ type: "hello", token }),
 	onMessage: handleMessage,
 	onStatus: (status) => update({ status }),

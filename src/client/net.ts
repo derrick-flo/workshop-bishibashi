@@ -33,7 +33,8 @@ export function connect(path: string, handlers: Handlers): Connection {
 	/** 한 번이라도 열렸으면 그 뒤의 실패는 망 문제다(진행자 키가 틀려서 거절된 것과 구분한다) */
 	let everOpened = false;
 
-	const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}`;
+	// 페이지 주소 기준 상대 경로라, 하위 경로(예: /bishibashi/)에 올려도 그 아래 ws 로 붙는다
+	const url = new URL(path, location.href.replace(/^http/, "ws"));
 
 	function scheduleOpen(): void {
 		clearTimeout(retryTimer);

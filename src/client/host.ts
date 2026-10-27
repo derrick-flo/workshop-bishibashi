@@ -87,7 +87,7 @@ const hostKey = readHostKey();
 if (hostKey === null && needsHostKey(location.hostname)) {
 	showKeyGate("");
 } else {
-	const connection = connect(hostKey === null ? "/ws?role=host" : `/ws?role=host&key=${encodeURIComponent(hostKey)}`, {
+	const connection = connect(hostKey === null ? "ws?role=host" : `ws?role=host&key=${encodeURIComponent(hostKey)}`, {
 		onOpen: () => connection.send({ type: "hello", token: null }),
 		onMessage: handleMessage,
 		onStatus: (status) => {
