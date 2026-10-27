@@ -28,11 +28,13 @@
 
 Cloudflare Workers 위에서 돕니다. 폰 화면(`/`)과 진행자 화면(`/host`)은 정적 파일로 내려주고, WebSocket(`/ws`)만 Worker가 받습니다.
 게임 한 판의 상태는 Durable Object 하나가 들고 모든 연결에 중계합니다.
+Docker로 띄울 때는 Node 서버 하나가 같은 일을 합니다([Docker로 실행](#docker로-실행)).
 
 ```
 src/
   domain/      게임 규칙·점수·순위 (순수 함수)
   server/      Worker와 Durable Object(GameRoom), 저장된 상태 불러오기
+  node/        Docker·Node용 서버 (Durable Object 대신 연결·저장·마감 알람)
   client/      폰·진행자 화면, 픽셀 엔진(pixel/), 게임별 장면(games/)
   protocol.ts  서버·클라이언트 메시지 해석
 scripts/       리허설·가상 관객 도구
@@ -72,15 +74,66 @@ npm run deploy
 배포한 주소(`https://workshop-bishibashi.<계정 서브도메인>.workers.dev`)의 진행자 화면은 진행자 키를 묻습니다.
 `/host?key=...`로 열어도 되고, 이때 주소창의 키는 바로 지워집니다. 키는 그 탭에서만 기억합니다.
 
+## Docker로 실행
+
+Cloudflare 없이 Node 서버 하나로도 돕니다. 게임 로직(GameRoom)은 같고, Durable Object가 하던 연결 관리·저장·마감 알람을 `src/node`가 대신합니다.
+
+```bash
+docker compose up --build
+```
+
+- 폰 화면: http://localhost:8787
+- 진행자 화면: http://localhost:8787/host
+- 진행 상태는 `bishibashi-data` 볼륨의 `room.json`에 저장돼서 컨테이너를 다시 켜도 이어집니다.
+- 진행자 키는 `HOST_KEY` 환경변수로 넣습니다(예: `HOST_KEY=... docker compose up --build`).
+- 이미지는 `node:24-bookworm-slim` 위에서 만들고 x86_64·arm64(라즈베리파이 64비트 OS 포함)에서 돕니다. Node 24 이미지에는 32비트 ARM(armv7) 판이 없습니다.
+
+내 컴퓨터·사내망 주소로 열면 진행자 키 없이 진행자 화면이 열립니다. 운영에서는 컨테이너 포트를 바깥에 열지 말고 리버스 프록시(traefik 등) 뒤에 두세요. 도메인으로 들어온 요청은 키가 맞아야 진행자로 붙습니다.
+
+Docker 없이 Node로 바로 띄우려면 `npm run serve`를 씁니다(환경변수 `PORT`, `DATA_DIR`, `HOST_KEY`).
+
+### 하위 경로에 올리기
+
+화면·소켓 주소가 모두 상대 경로라 `https://example.com/bishibashi/`처럼 다른 서비스와 한 도메인을 나눠 쓸 수 있습니다.
+프록시가 앞의 `/bishibashi`를 떼고 넘기면 됩니다. traefik이라면 이렇게 붙입니다.
+
+```yaml
+services:
+  bishibashi:
+    build: ./workshop-bishibashi
+    restart: unless-stopped
+    environment:
+      HOST_KEY: ${BISHIBASHI_HOST_KEY}
+    volumes:
+      - bishibashi-data:/app/data
+    networks:
+      - proxy-net
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.bishibashi.rule=Host(`example.com`) && PathPrefix(`/bishibashi`)
+      - traefik.http.routers.bishibashi.entrypoints=web
+      - traefik.http.routers.bishibashi.middlewares=bishibashi-slash,bishibashi-strip
+      # 끝의 / 가 있어야 상대 경로가 맞으므로 /bishibashi 는 /bishibashi/ 로 보낸다
+      - traefik.http.middlewares.bishibashi-slash.redirectregex.regex=^[^:]+://[^/]+/bishibashi$$
+      - traefik.http.middlewares.bishibashi-slash.redirectregex.replacement=/bishibashi/
+      - traefik.http.middlewares.bishibashi-strip.stripprefix.prefixes=/bishibashi
+      - traefik.http.services.bishibashi.loadbalancer.server.port=8787
+
+volumes:
+  bishibashi-data:
+```
+
+서브도메인(`bishibashi.example.com`)에 올리면 `rule`만 `Host(...)`로 바꾸고 미들웨어 두 개는 빼면 됩니다.
+
 ## 리허설과 가상 관객
 
-서버를 띄워 둔 상태에서 씁니다. 명단과 진행 상태를 덮어쓰기 때문에 localhost가 아니면 `--allow-remote`를 붙여야 실행됩니다.
+서버(`npm run dev`나 Docker)를 띄워 둔 상태에서 씁니다. 명단과 진행 상태를 덮어쓰기 때문에 localhost가 아니면 `--allow-remote`를 붙여야 실행됩니다.
 
 ```bash
 npm run rehearsal
 ```
 
-가상 참가자 30명이 순서표 6라운드를 돌며 재접속·늦은 입장·라운드 취소를 거쳐 최종 순위까지 확인합니다. `npm run rehearsal -- --rounds=2`로 줄일 수 있습니다.
+가상 참가자 30명이 순서표 6라운드를 돌며 재접속·늦은 입장·라운드 취소를 거쳐 최종 순위까지 확인합니다. `npm run rehearsal -- --rounds=3`으로 줄일 수 있습니다(늦은 입장은 3라운드 앞에서 확인합니다).
 
 ```bash
 npm run crowd

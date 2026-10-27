@@ -1,0 +1,8 @@
+.git
+node_modules
+.wrangler
+.dev.vars
+dist
+data
+public/js
+public/fonts
