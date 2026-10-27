@@ -1439,6 +1439,58 @@ body.host {
 	gap: calc(var(--hp) * 3);
 }
 
+/* 혼자 하는 도전 성공 기준 칸 */
+.ax-rules {
+	display: grid;
+	gap: calc(var(--hp) * 3);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.ax-rules__row {
+	display: grid;
+	grid-template-columns: 1fr auto;
+	align-items: center;
+	gap: var(--hp) calc(var(--hp) * 3);
+	padding: calc(var(--hp) * 2) calc(var(--hp) * 3);
+	background: var(--ax-night);
+	font-size: calc(var(--hp) * 12);
+}
+
+.ax-rules__name {
+	color: var(--ax-white);
+}
+
+.ax-rules__field {
+	display: flex;
+	align-items: center;
+	gap: calc(var(--hp) * 2);
+	justify-self: end;
+}
+
+.ax-rules__field input {
+	width: calc(var(--hp) * 54);
+	padding: calc(var(--hp) * 2);
+	border: 0;
+	background: var(--ax-ink);
+	color: var(--ax-yellow);
+	font-family: var(--font-pixel);
+	font-size: calc(var(--hp) * 12);
+	text-align: right;
+	box-shadow: 0 0 0 var(--hp) var(--ax-lavender);
+}
+
+.ax-rules__unit,
+.ax-rules__range {
+	color: var(--ax-gray);
+}
+
+.ax-rules__range {
+	grid-column: 1 / -1;
+	font-size: calc(var(--hp) * 10);
+}
+
 .ax-plan-edit {
 	display: grid;
 	gap: calc(var(--hp) * 2);
@@ -1703,4 +1755,132 @@ body.dev {
 	height: 48px;
 	color: #000;
 	text-shadow: 0 0 2px #fff;
+}
+
+/* ========== 혼자 하는 도전(/reaction · /stopwatch · /circle) ========== */
+body.solo {
+	/* 그리는 동안 화면이 끌려 내려가지 않게 */
+	overscroll-behavior: none;
+}
+
+.ax-solo {
+	display: flex;
+	flex-direction: column;
+	gap: calc(var(--px) * 2);
+	box-sizing: border-box;
+	max-width: 560px;
+	height: 100dvh;
+	margin: 0 auto;
+	padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+	overflow: hidden;
+}
+
+.ax-solo__head {
+	flex: none;
+	text-align: center;
+}
+
+.ax-solo__title {
+	margin: 0;
+	color: var(--ax-yellow);
+	font-size: calc(var(--fp3) * 12);
+	font-weight: 400;
+	line-height: 1.1;
+	text-shadow: var(--fp2) var(--fp2) 0 var(--ax-ink);
+}
+
+.ax-solo__goal {
+	margin: calc(var(--px) * 1) 0 0;
+	color: var(--ax-gray);
+	font-size: calc(var(--fp) * 12);
+}
+
+/* 진행자 화면과 못 이어졌을 때. 보이는 기준이 진행자가 정한 것과 다를 수 있다는 표시 */
+.ax-solo__unlinked {
+	margin-left: calc(var(--px) * 1);
+	color: var(--ax-orange);
+}
+
+.ax-solo__unlinked::before {
+	content: "· ";
+}
+
+/* 놀이판: 캔버스가 남는 자리를 다 쓰고 그 아래에 안내 한 줄(.ax-hint) */
+.ax-solo__stage {
+	display: flex;
+	flex: 1 1 0;
+	flex-direction: column;
+	min-height: 0;
+	touch-action: none;
+	user-select: none;
+	-webkit-user-select: none;
+	-webkit-tap-highlight-color: transparent;
+}
+
+.ax-solo__stage > .px-screen {
+	flex: 1 1 0;
+	width: 100%;
+	height: auto;
+	min-height: 0;
+}
+
+/* 이 탭에서 한 도전 기록. 새로고침하면 사라진다. */
+.ax-solo__log {
+	display: flex;
+	flex: none;
+	flex-direction: column;
+	gap: var(--px);
+}
+
+.ax-solo__tally {
+	margin: 0;
+	color: var(--ax-pale);
+	font-size: calc(var(--fp) * 12);
+	text-align: center;
+}
+
+.ax-solo__tally b {
+	color: var(--ax-yellow);
+	font-weight: 400;
+}
+
+.ax-solo__rows {
+	display: flex;
+	flex-direction: column;
+	gap: var(--px);
+	max-height: calc(var(--px) * 44);
+	margin: 0;
+	padding: 0;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	list-style: none;
+}
+
+.ax-solo__row {
+	display: flex;
+	align-items: center;
+	gap: calc(var(--px) * 2);
+	margin: 0 var(--px);
+	padding: calc(var(--px) * 1) calc(var(--px) * 2);
+	background: var(--ax-night-2);
+	box-shadow: 0 0 0 var(--px) var(--ax-ink);
+	font-size: calc(var(--fp) * 12);
+}
+
+.ax-solo__no {
+	min-width: calc(var(--fp) * 22);
+	color: var(--ax-gray);
+}
+
+.ax-solo__record {
+	flex: 1 1 auto;
+	color: var(--ax-white);
+}
+
+.ax-solo__mark {
+	color: var(--ax-pink);
+}
+
+.ax-solo__row[data-passed="true"] .ax-solo__mark {
+	color: var(--ax-lime);
 }

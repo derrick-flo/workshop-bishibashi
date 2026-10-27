@@ -1,5 +1,6 @@
 import { GAMES, type GameId } from "./games/catalog";
 import type { Player, PlayerId, Scores } from "./player";
+import { DEFAULT_SOLO_RULES, type SoloRules } from "./solo/rules";
 
 export const ROUND_TIMING = {
 	/** 시작을 누른 뒤 게임이 열리기까지(준비 + 3·2·1) */
@@ -53,6 +54,8 @@ export type GameState = {
 	readonly plan: readonly GameId[];
 	readonly history: readonly RoundResult[];
 	readonly phase: Phase;
+	/** 혼자 하는 도전 세 종목(/reaction·/stopwatch·/circle)의 성공 기준. 라운드와 상관없다. */
+	readonly soloRules: SoloRules;
 };
 
 export type Rejection =
@@ -72,7 +75,13 @@ export type Rejection =
 
 export type Transition = { readonly ok: true; readonly state: GameState } | { readonly ok: false; readonly reason: Rejection };
 
-export const EMPTY_GAME: GameState = { players: [], plan: [], history: [], phase: { kind: "lobby" } };
+export const EMPTY_GAME: GameState = {
+	players: [],
+	plan: [],
+	history: [],
+	phase: { kind: "lobby" },
+	soloRules: DEFAULT_SOLO_RULES,
+};
 
 const accept = (state: GameState): Transition => ({ ok: true, state });
 const reject = (reason: Rejection): Transition => ({ ok: false, reason });
@@ -119,6 +128,14 @@ export function setPlan(state: GameState, upcoming: readonly GameId[]): Transiti
 	const plan = [...state.plan.slice(0, lockedPlanLength(state)), ...upcoming];
 	if (plan.length > PLAN_LIMIT) return reject("plan_too_long");
 	return accept({ ...state, plan });
+}
+
+/**
+ * 혼자 하는 도전 성공 기준을 바꾼다. 파티 게임과 상관없어서 어느 단계에서든 할 수 있고 거절되지 않는다.
+ * 폰은 바뀐 기준을 바로 받고, 그 뒤에 끝나는 도전부터 이 기준으로 본다.
+ */
+export function setSoloRules(state: GameState, soloRules: SoloRules): GameState {
+	return { ...state, soloRules };
 }
 
 /** 다음 라운드 게임. 순서표를 다 했으면 null */

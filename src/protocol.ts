@@ -1,6 +1,7 @@
 import { type GameState, PLAN_LIMIT } from "./domain/game";
 import { type GameId, isGameId } from "./domain/games/catalog";
 import type { PlayerId } from "./domain/player";
+import { parseSoloRules, type SoloRules } from "./domain/solo/rules";
 
 /** 폰 → 서버 */
 export type PlayerMessage =
@@ -14,6 +15,8 @@ export type HostMessage =
 	| { readonly type: "setRoster"; readonly names: readonly string[] }
 	/** 순서표에서 아직 안 한 부분을 통째로 바꾼다 */
 	| { readonly type: "setPlan"; readonly gameIds: readonly GameId[] }
+	/** 혼자 하는 도전 세 종목의 성공 기준을 바꾼다 */
+	| { readonly type: "setSoloRules"; readonly rules: SoloRules }
 	/** 다음 라운드 게임 설명(시연)을 띄운다 / 접고 로비로 */
 	| { readonly type: "openIntro" }
 	| { readonly type: "closeIntro" }
@@ -76,6 +79,10 @@ const PARSERS: Readonly<Record<ClientMessage["type"], (fields: Fields) => Client
 		const parsed = parseGameIds(gameIds);
 		return parsed === null ? null : { type: "setPlan", gameIds: parsed };
 	},
+	setSoloRules: ({ rules }) => {
+		const parsed = parseSoloRules(rules);
+		return parsed === null ? null : { type: "setSoloRules", rules: parsed };
+	},
 	openIntro: () => ({ type: "openIntro" }),
 	closeIntro: () => ({ type: "closeIntro" }),
 	startRound: () => ({ type: "startRound" }),
@@ -106,6 +113,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 const HOST_TYPES: ReadonlySet<ClientMessage["type"]> = new Set([
 	"setRoster",
 	"setPlan",
+	"setSoloRules",
 	"openIntro",
 	"closeIntro",
 	"startRound",

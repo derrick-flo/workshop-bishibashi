@@ -1,6 +1,7 @@
 import { EMPTY_GAME, type GameState } from "../domain/game";
 import { isGameId } from "../domain/games/catalog";
 import type { Player } from "../domain/player";
+import { readSoloRules } from "../domain/solo/rules";
 
 const PHASES: ReadonlySet<string> = new Set(["lobby", "intro", "playing", "results", "finished"]);
 
@@ -21,7 +22,8 @@ function isPlayer(value: unknown): value is Player {
  */
 function withoutRemovedGames(saved: GameState): GameState {
 	const plan = saved.plan.filter(isGameId);
-	if (!saved.history.every((round) => isGameId(round.gameId))) return { ...EMPTY_GAME, players: saved.players, plan };
+	if (!saved.history.every((round) => isGameId(round.gameId)))
+		return { ...EMPTY_GAME, players: saved.players, plan, soloRules: saved.soloRules };
 	const phase = saved.phase;
 	const current =
 		phase.kind === "playing" || phase.kind === "results" ? phase.round.gameId : phase.kind === "intro" ? saved.plan[saved.history.length] : undefined;
@@ -38,7 +40,9 @@ export function restoreGame(raw: unknown): GameState {
 	if (!isFields(raw) || !Array.isArray(raw.players)) return EMPTY_GAME;
 	const isCurrent =
 		Array.isArray(raw.plan) && Array.isArray(raw.history) && isFields(raw.phase) && PHASES.has(String(raw.phase.kind));
-	if (isCurrent) return withoutRemovedGames(raw as GameState);
+	// 혼자 하는 도전 기준이 없던 때의 저장본도 있어서 기준은 따로 읽는다(알아볼 수 없으면 기본 기준)
+	const soloRules = readSoloRules(raw.soloRules);
+	if (isCurrent) return withoutRemovedGames({ ...(raw as GameState), soloRules });
 	const players = raw.players.filter(isPlayer).map(({ id, name, claimed }): Player => ({ id, name, claimed }));
-	return { ...EMPTY_GAME, players };
+	return { ...EMPTY_GAME, players, soloRules };
 }

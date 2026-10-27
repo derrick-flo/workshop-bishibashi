@@ -1,6 +1,7 @@
 import { type GameState, joinedPlayers, lockedPlanLength, nextGame } from "../domain/game";
 import { GAMES, type GameId, isGameId } from "../domain/games/catalog";
 import type { PlayerId } from "../domain/player";
+import { clampSoloRule, DEFAULT_SOLO_RULES, SOLO_RULE_LIMITS, type SoloRules } from "../domain/solo/rules";
 import { needsHostKey } from "../host-access";
 import type { HostMessage, ServerMessage } from "../protocol";
 import { arcade } from "./arcade-sound";
@@ -22,7 +23,7 @@ type View = {
 	readonly onlineIds: readonly PlayerId[];
 	readonly status: ConnectionStatus;
 	/** 앞 화면에서 고치는 중인 것. 고치는 동안에는 앞 화면을 다시 그리지 않는다. */
-	readonly editing: "roster" | "plan" | null;
+	readonly editing: "roster" | "plan" | "solo" | null;
 	/** 순서표 편집 중인 아직 안 한 라운드들 */
 	readonly draft: readonly GameId[];
 	readonly selected: PlayerId | null;
@@ -325,6 +326,7 @@ function lobbyControls(game: GameState): string {
 	return `<div class="ax-controls">
 		<button type="button" class="ax-btn" data-action="plan">순서표</button>
 		<button type="button" class="ax-btn" data-action="roster">명단</button>
+		<button type="button" class="ax-btn" data-action="solo">도전 기준</button>
 		<button type="button" class="ax-btn" data-action="reset">처음부터</button>
 		<span class="ax-controls__spacer"></span>
 		${game.history.length > 0 ? `<button type="button" class="ax-btn" data-action="finish">최종 순위 발표</button>` : ""}
@@ -342,6 +344,89 @@ function rosterEditor(game: GameState): string {
 			<button type="button" class="ax-btn ax-btn--go" data-action="roster-save">저장</button>
 		</div>
 	</section>`;
+}
+
+/** 기준 한 줄. value·min·max·step 은 입력 칸에 적는 단위(초시계는 초) */
+type RuleRow = {
+	readonly id: string;
+	readonly name: string;
+	readonly unit: string;
+	readonly value: number;
+	readonly min: number;
+	readonly max: number;
+	readonly step: number;
+	readonly basic: number;
+};
+
+function ruleRow(row: RuleRow): string {
+	return `<li class="ax-rules__row">
+		<label class="ax-rules__name" for="${row.id}">${row.name}</label>
+		<span class="ax-rules__field">
+			<input id="${row.id}" type="number" inputmode="decimal" value="${row.value}" min="${row.min}" max="${row.max}" step="${row.step}">
+			<span class="ax-rules__unit">${row.unit}</span>
+		</span>
+		<span class="ax-rules__range">${row.min} ~ ${row.max} · 기본 ${row.basic}</span>
+	</li>`;
+}
+
+/** 혼자 하는 도전 세 종목의 성공 기준을 고치는 칸 */
+function soloEditor(rules: SoloRules): string {
+	const limits = SOLO_RULE_LIMITS;
+	const second = (ms: number) => Math.round((ms / 1000) * 100) / 100;
+	return `<section class="ax-editor ax-box">
+		<h2 class="ax-editor__title">혼자 하는 도전 · 성공 기준</h2>
+		<p class="ax-muted">폰에서 /reaction · /stopwatch · /circle 로 하는 도전의 기준이에요. 저장하면 열려 있는 폰에 바로 닿고, 그 뒤에 끝나는 도전부터 이 기준으로 봐요. 기록판에 이미 쌓인 건 그대로 둬요.</p>
+		<ul class="ax-rules">
+			${ruleRow({
+				id: "solo-reaction",
+				name: "🚦 반응속도",
+				unit: "ms 이하면 성공",
+				value: rules.reactionPassMs,
+				min: limits.reactionPassMs.min,
+				max: limits.reactionPassMs.max,
+				step: limits.reactionPassMs.step,
+				basic: DEFAULT_SOLO_RULES.reactionPassMs,
+			})}
+			${ruleRow({
+				id: "solo-stopwatch",
+				name: "⏱️ 10초 맞추기",
+				unit: "초 이내면 성공",
+				value: second(rules.stopwatchAllowedMs),
+				min: second(limits.stopwatchAllowedMs.min),
+				max: second(limits.stopwatchAllowedMs.max),
+				step: second(limits.stopwatchAllowedMs.step),
+				basic: second(DEFAULT_SOLO_RULES.stopwatchAllowedMs),
+			})}
+			${ruleRow({
+				id: "solo-circle",
+				name: "⭕ 원 그리기",
+				unit: "% 이상이면 성공",
+				value: rules.circlePassPercent,
+				min: limits.circlePassPercent.min,
+				max: limits.circlePassPercent.max,
+				step: limits.circlePassPercent.step,
+				basic: DEFAULT_SOLO_RULES.circlePassPercent,
+			})}
+		</ul>
+		<p class="ax-muted">반응속도와 10초 맞추기는 숫자를 올리면, 원 그리기는 숫자를 내리면 쉬워져요.</p>
+		<div class="ax-editor__actions">
+			<button type="button" class="ax-btn" data-action="solo-close">닫기</button>
+			<button type="button" class="ax-btn ax-btn--go" data-action="solo-save">저장</button>
+		</div>
+	</section>`;
+}
+
+/** 입력 칸에 적힌 기준. 비워 두면 지금 기준을 그대로 쓴다. */
+function soloRulesFromForm(current: SoloRules): SoloRules {
+	const read = (selector: string, key: keyof SoloRules, scale = 1): number => {
+		const text = pick<HTMLInputElement>(stage, selector).value.trim();
+		return text === "" ? current[key] : clampSoloRule(key, Number(text) * scale);
+	};
+	return {
+		reactionPassMs: read("#solo-reaction", "reactionPassMs"),
+		stopwatchAllowedMs: read("#solo-stopwatch", "stopwatchAllowedMs", 1000),
+		circlePassPercent: read("#solo-circle", "circlePassPercent"),
+	};
 }
 
 // ---------- 입력 ----------
@@ -406,6 +491,17 @@ function handleClick(event: MouseEvent, send: (message: HostMessage) => void): v
 			send({ type: "setRoster", names });
 			return update({ editing: null });
 		}
+		case "solo":
+			view = { ...view, editing: "solo" };
+			paintedStage = null;
+			stage.innerHTML = soloEditor(game.soloRules);
+			return render();
+		case "solo-close":
+			return update({ editing: null });
+		case "solo-save":
+			send({ type: "setSoloRules", rules: soloRulesFromForm(game.soloRules) });
+			update({ editing: null });
+			return notify("도전 기준을 바꿨어요. 열려 있는 폰에 바로 닿아요.");
 		case "plan":
 			return update({ editing: "plan", draft: game.plan.slice(lockedPlanLength(game)) });
 		case "plan-add":

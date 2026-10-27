@@ -15,6 +15,7 @@ import {
 	resetGame,
 	setPlan,
 	setRoster,
+	setSoloRules,
 	startRound,
 	submitScore,
 	type Transition,
@@ -160,6 +161,8 @@ export class GameRoom extends DurableObject<Env> {
 			}
 			case "setPlan":
 				return setPlan(this.game, message.gameIds);
+			case "setSoloRules":
+				return { ok: true, state: setSoloRules(this.game, message.rules) };
 			case "openIntro":
 				return openIntro(this.game);
 			case "closeIntro":

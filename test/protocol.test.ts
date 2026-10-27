@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PLAN_LIMIT } from "../src/domain/game";
+import { DEFAULT_SOLO_RULES, SOLO_RULE_LIMITS } from "../src/domain/solo/rules";
 import { isHostMessage, parseClientMessage } from "../src/protocol";
 
 const parse = (value: unknown) => parseClientMessage(JSON.stringify(value));
@@ -20,6 +21,9 @@ describe("parseClientMessage", () => {
 			expect(parse({ type })).toEqual({ type });
 		}
 		expect(parse({ type: "release", playerId: "p3" })).toEqual({ type: "release", playerId: "p3" });
+		const rules = { reactionPassMs: 400, stopwatchAllowedMs: 1200, circlePassPercent: 80 };
+		expect(parse({ type: "setSoloRules", rules })).toEqual({ type: "setSoloRules", rules });
+		expect(parse({ type: "setSoloRules", rules: DEFAULT_SOLO_RULES })).toEqual({ type: "setSoloRules", rules: DEFAULT_SOLO_RULES });
 	});
 
 	it("필요한 필드만 남기고 나머지는 버린다", () => {
@@ -51,6 +55,10 @@ describe("parseClientMessage", () => {
 		expect(parse({ type: "setRoster", names: ["김철수", 3] })).toBeNull();
 		expect(parse({ type: "setRoster", names: Array.from({ length: 101 }, (_, i) => `사람${i}`) })).toBeNull();
 		expect(parse({ type: "hello", token: "x".repeat(200) })).toBeNull();
+		expect(parse({ type: "setSoloRules", rules: { ...DEFAULT_SOLO_RULES, reactionPassMs: SOLO_RULE_LIMITS.reactionPassMs.max + 1 } })).toBeNull();
+		expect(parse({ type: "setSoloRules", rules: { reactionPassMs: 230 } })).toBeNull();
+		expect(parse({ type: "setSoloRules", rules: "230" })).toBeNull();
+		expect(parse({ type: "setSoloRules" })).toBeNull();
 	});
 });
 
@@ -62,6 +70,7 @@ describe("isHostMessage", () => {
 		expect(isHostMessage({ type: "openIntro" })).toBe(true);
 		expect(isHostMessage({ type: "closeIntro" })).toBe(true);
 		expect(isHostMessage({ type: "release", playerId: "p1" })).toBe(true);
+		expect(isHostMessage({ type: "setSoloRules", rules: DEFAULT_SOLO_RULES })).toBe(true);
 		expect(isHostMessage({ type: "claim", playerId: "p1" })).toBe(false);
 		expect(isHostMessage({ type: "hello", token: null })).toBe(false);
 		expect(isHostMessage({ type: "submit", roundNo: 1, playAt: 5, score: 1 })).toBe(false);
