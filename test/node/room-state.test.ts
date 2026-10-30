@@ -72,5 +72,7 @@ describe("Node 저장소(Durable Object 대신)", () => {
 		await state.storage.setAlarm(deadline - 500);
 		await vi.advanceTimersByTimeAsync(2_000);
 		expect(alarm).toHaveBeenCalledTimes(2);
+		// 두 번째로 울린 뒤 알람을 지우는 저장이 아직 파일에 쓰는 중일 수 있다. 끝나기 전에 임시 폴더를 지우면 ENOTEMPTY 가 난다.
+		await state.flush();
 	});
 });
