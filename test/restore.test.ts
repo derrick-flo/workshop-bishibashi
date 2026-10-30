@@ -9,6 +9,9 @@ describe("restoreGame", () => {
 	it("지금 형식은 그대로 불러온다", () => {
 		const saved: GameState = {
 			players: [{ id: "p1", name: "가람", claimed: true }],
+			mode: "points",
+			bracket: null,
+			byeIds: [],
 			plan: ["eye", "balloon"],
 			history: [{ no: 1, gameId: "eye", participantIds: ["p1"], scores: { p1: 3 } }],
 			phase: { kind: "lobby" },
@@ -51,7 +54,7 @@ describe("restoreGame", () => {
 			phase: { kind: "lobby" },
 			soloRules: EASIER,
 		};
-		expect(restoreGame(saved)).toEqual({ ...saved, plan: ["eye", "balloon"] });
+		expect(restoreGame(saved)).toEqual({ ...saved, mode: "points", bracket: null, byeIds: [], plan: ["eye", "balloon"] });
 	});
 
 	it("없어진 게임으로 이미 라운드를 했으면 기록은 비우고 명단·입장과 순서표만 살린다", () => {
@@ -72,9 +75,62 @@ describe("restoreGame", () => {
 		const players = [{ id: "p1", name: "가람", claimed: true }];
 		const round = { no: 2, gameId: "reaction", seed: 1, playAt: 0, endAt: 1, deadlineAt: 2, participantIds: ["p1"], scores: {} };
 		const playing = { players, plan: ["eye", "reaction", "balloon"], history, phase: { kind: "playing", round }, soloRules: EASIER };
-		const expected = { players, plan: ["eye", "balloon"], history, phase: { kind: "lobby" }, soloRules: EASIER };
+		const expected = { players, mode: "points", bracket: null, byeIds: [], plan: ["eye", "balloon"], history, phase: { kind: "lobby" }, soloRules: EASIER };
 		expect(restoreGame(playing)).toEqual(expected);
 		expect(restoreGame({ ...playing, phase: { kind: "intro" } })).toEqual(expected);
+	});
+
+	it("방식·대진이 없던 저장본은 점수전으로 본다", () => {
+		const saved = { players: [], plan: ["eye"], history: [], phase: { kind: "lobby" }, soloRules: EASIER, bracket: { slots: ["p1", "p2"] } };
+		const restored = restoreGame(saved);
+		// 점수전에서는 대진을 쓰지 않으므로 저장본에 남아 있어도 버린다
+		expect(restored.mode).toBe("points");
+		expect(restored.bracket).toBeNull();
+	});
+
+	it("토너먼트는 대진을 함께 살린다", () => {
+		const players = [
+			{ id: "p1", name: "가람", claimed: true },
+			{ id: "p2", name: "나래", claimed: true },
+		];
+		const saved = {
+			players,
+			mode: "tournament",
+			bracket: { slots: ["p1", "p2"] },
+			byeIds: ["p2"],
+			plan: ["eye"],
+			history: [{ no: 1, gameId: "eye", participantIds: ["p1", "p2"], scores: { p1: 3, p2: 1 } }],
+			phase: { kind: "finished" },
+			soloRules: EASIER,
+		};
+		expect(restoreGame(structuredClone(saved))).toEqual(saved);
+	});
+
+	it("토너먼트인데 대진을 알아볼 수 없으면 명단·순서표만 살리고 처음 상태로 둔다", () => {
+		const players = [{ id: "p1", name: "가람", claimed: true }];
+		for (const bracket of [undefined, null, "p1", { slots: "p1" }, { slots: ["p1", "p2", "p3"] }, { slots: ["p1", 7] }]) {
+			const saved = {
+				players,
+				mode: "tournament",
+				bracket,
+				plan: ["eye"],
+				history: [{ no: 1, gameId: "eye", participantIds: ["p1"], scores: { p1: 3 } }],
+				phase: { kind: "lobby" },
+				soloRules: EASIER,
+			};
+			expect(restoreGame(saved)).toEqual({ ...EMPTY_GAME, players, plan: ["eye"], soloRules: EASIER, mode: "tournament" });
+		}
+	});
+
+	it("부전승 지정은 명단에 있는 사람만 살리고, 없던 저장본은 빈 목록으로 둔다", () => {
+		const players = [
+			{ id: "p1", name: "가람", claimed: true },
+			{ id: "p2", name: "나래", claimed: false },
+		];
+		const base = { players, mode: "tournament", plan: ["eye"], history: [], phase: { kind: "lobby" }, soloRules: EASIER, bracket: null };
+		expect(restoreGame({ ...base, byeIds: ["p2", "사라진 사람", 7, "p1"] }).byeIds).toEqual(["p2", "p1"]);
+		expect(restoreGame(base).byeIds).toEqual([]);
+		expect(restoreGame({ ...base, byeIds: "p1" }).byeIds).toEqual([]);
 	});
 
 	it("알아볼 수 없으면 빈 상태", () => {

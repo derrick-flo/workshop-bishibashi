@@ -12,6 +12,7 @@
 		"skipLibCheck": true
 	},
 	"include": ["src/server", "src/domain", "src/protocol.ts", "test", "worker-configuration.d.ts"],
-	// Node 서버 테스트는 Node 타입이 필요해서 src/node/tsconfig.json 에서 따로 검사한다
-	"exclude": ["test/node"]
+	// Node 서버 테스트는 Node 타입이 필요해서 src/node/tsconfig.json 에서,
+	// 브라우저 코드를 불러오는 테스트는 DOM 타입이 필요해서 src/client/tsconfig.json 에서 따로 검사한다
+	"exclude": ["test/node", "test/client"]
 }

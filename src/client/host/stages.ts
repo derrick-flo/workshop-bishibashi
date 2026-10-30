@@ -16,7 +16,7 @@ export type StageOptions = {
 	readonly resultsTab: "round" | "total";
 };
 
-const nameOf = (game: GameState, id: PlayerId) => game.players.find((player) => player.id === id)?.name ?? "?";
+export const nameOf = (game: GameState, id: PlayerId) => game.players.find((player) => player.id === id)?.name ?? "?";
 
 /** 폰이 들어올 주소. 진행자 화면과 같은 경로 아래라 하위 경로(예: /bishibashi/)에 올려도 맞다. */
 const joinUrl = (): URL => new URL(".", location.href);
@@ -38,8 +38,18 @@ function joinQr(): string {
 	return qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
 }
 
+/** 폰이 들어올 QR과 주소. 로비에서 쓴다(토너먼트 로비도 같이 쓴다). */
+export function joinCard(): string {
+	return `<div class="ax-join ax-box">
+		<h1 class="ax-logo"><span>워크샵</span><b>비시바시</b></h1>
+		<div class="ax-join__qr">${joinQr()}</div>
+		<p class="ax-join__url">${joinLabelHtml()}</p>
+		<p class="ax-join__hint ax-blink">폰 카메라로 찍고 이름을 눌러요</p>
+	</div>`;
+}
+
 /** 순서표 띠: 끝난 라운드는 흐리게, 다음 라운드는 강조 */
-function planStrip(game: GameState): string {
+export function planStrip(game: GameState): string {
 	if (game.plan.length === 0) return `<p class="ax-muted">순서표가 비어 있어요. 아래 '순서표'에서 게임을 넣어 주세요.</p>`;
 	const locked = lockedPlanLength(game);
 	const next = game.history.length;
@@ -62,28 +72,31 @@ function nextCard(game: GameState): string {
 	</aside>`;
 }
 
-function chips(game: GameState, options: StageOptions): string {
-	return `<ul class="ax-chips">${game.players.map((player) => chip(player, options)).join("")}</ul>`;
+export function chips(game: GameState, options: StageOptions): string {
+	return `<ul class="ax-chips">${game.players.map((player) => chip(game, player, options)).join("")}</ul>`;
 }
 
-function chip(player: Player, options: StageOptions): string {
+/** 이름표. 누르면 아래에 메뉴가 열린다(입장 풀기, 토너먼트는 첫 경기 전까지 부전승 지정). */
+function chip(game: GameState, player: Player, options: StageOptions): string {
 	const online = options.onlineIds.includes(player.id);
 	const selected = options.selected === player.id;
-	const classes = ["ax-chip", player.claimed ? "is-claimed" : "", online ? "is-online" : "", selected ? "is-selected" : ""].join(" ");
-	const menu = selected && player.claimed ? `<div class="ax-chip-menu"><button type="button" class="ax-btn ax-btn--small" data-action="release" data-id="${esc(player.id)}">입장 풀기</button></div>` : "";
-	return `<li><button type="button" class="${classes}" data-action="select" data-id="${esc(player.id)}" aria-pressed="${selected}"><i class="ax-chip__dot" aria-hidden="true"></i>${esc(player.name)}</button>${menu}</li>`;
+	const canBye = game.mode === "tournament" && game.history.length === 0;
+	const bye = canBye && game.byeIds.includes(player.id);
+	const classes = ["ax-chip", player.claimed ? "is-claimed" : "", online ? "is-online" : "", selected ? "is-selected" : "", bye ? "is-bye" : ""].join(" ");
+	const id = esc(player.id);
+	const actions = [
+		player.claimed ? `<button type="button" class="ax-btn ax-btn--small" data-action="release" data-id="${id}">입장 풀기</button>` : "",
+		canBye ? `<button type="button" class="ax-btn ax-btn--small" data-action="${bye ? "unbye" : "bye"}" data-id="${id}">${bye ? "부전승 풀기" : "부전승 지정"}</button>` : "",
+	].join("");
+	const menu = selected && actions !== "" ? `<div class="ax-chip-menu">${actions}</div>` : "";
+	return `<li><button type="button" class="${classes}" data-action="select" data-id="${id}" aria-pressed="${selected}"><i class="ax-chip__dot" aria-hidden="true"></i>${esc(player.name)}${bye ? `<span class="ax-chip__bye" aria-label="부전승 지정">${svg.star}</span>` : ""}</button>${menu}</li>`;
 }
 
 export function lobbyStage(game: GameState, options: StageOptions): string {
 	const joined = joinedPlayers(game).length;
 	if (game.history.length === 0) {
 		return `<section class="ax-lobby">
-			<div class="ax-join ax-box">
-				<h1 class="ax-logo"><span>워크샵</span><b>비시바시</b></h1>
-				<div class="ax-join__qr">${joinQr()}</div>
-				<p class="ax-join__url">${joinLabelHtml()}</p>
-				<p class="ax-join__hint ax-blink">폰 카메라로 찍고 이름을 눌러요</p>
-			</div>
+			${joinCard()}
 			<div class="ax-lobby__side">
 				<h2 class="ax-section-title">입장 <b>${joined}</b> / ${game.players.length}</h2>
 				${game.players.length === 0 ? `<p class="ax-muted">아래 '명단' 버튼으로 참가자 이름을 넣어 주세요.</p>` : chips(game, options)}

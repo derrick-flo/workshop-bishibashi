@@ -1014,7 +1014,18 @@ body.host {
 	top: 100%;
 	left: 0;
 	z-index: 5;
+	/* 버튼은 위아래로 쌓는다(옆으로 놓으면 오른쪽 끝 이름의 메뉴가 화면 밖으로 나간다) */
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: calc(var(--hp) * 2);
 	margin-top: calc(var(--hp) * 3);
+	white-space: nowrap;
+}
+
+/* 토너먼트에서 부전승으로 정해 둔 사람 */
+.ax-chip__bye .ax-icon-inline {
+	width: calc(var(--hp) * 8);
 }
 
 .ax-next-up {
@@ -1897,4 +1908,528 @@ body.solo {
 
 .ax-solo__row[data-passed="true"] .ax-solo__mark {
 	color: var(--ax-lime);
+}
+
+/* ========== 토너먼트: 대진표·1:1 대결 (진행자 화면과 관전 화면이 같이 쓴다) ========== */
+
+/* 두 사람을 맞세운 패 */
+.ax-vs {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: center;
+	gap: calc(var(--hp) * 4) calc(var(--hp) * 8);
+}
+
+.ax-vs__name {
+	margin: 0;
+	color: var(--ax-white);
+	font-size: calc(var(--hp3) * 12);
+	font-weight: 400;
+	line-height: 1.1;
+}
+
+.ax-vs__name.is-win {
+	color: var(--ax-yellow);
+	text-shadow: var(--hp) var(--hp) 0 var(--ax-ink);
+}
+
+.ax-vs__name.is-lost {
+	color: var(--ax-gray-dark);
+}
+
+.ax-vs__mark {
+	color: var(--ax-red);
+	font-size: calc(var(--hp2) * 12);
+	text-shadow: var(--hp) var(--hp) 0 var(--ax-ink);
+}
+
+/*
+ * 대진표: 회전마다 한 칸(bracket.ts 가 반으로 갈라 양쪽에서 가운데 결승으로 모이게 놓는다).
+ * 크기는 모두 칸 단위(--bku)의 배수다. 한 칸 높이 = 회전 이름 18 + 틈 2 + 경기마다 40.5, 너비 = 64(칸 사이 6).
+ * 관전 화면은 이 치수로 자리에 맞는 --bku 를 계산하므로(.ax-arena__bracket) 치수를 바꾸면 거기도 같이 바꾼다.
+ */
+.ax-bk {
+	/* bracket.ts 가 넣는다: 한 칸에 쌓이는 경기 수, 칸 수 */
+	--bk-per: 1;
+	--bk-cols: 1;
+	/* 진행자 화면은 한 칸에 경기가 6개를 넘으면 그만큼 줄인다 */
+	--bku: calc(var(--hps) * min(1, 6 / var(--bk-per)));
+
+	display: flex;
+	justify-content: safe center;
+	gap: calc(var(--bku) * 6);
+	font-size: calc(var(--bku) * 12);
+	line-height: 1.5;
+}
+
+.ax-bk__round {
+	display: flex;
+	flex: none;
+	flex-direction: column;
+	gap: calc(var(--bku) * 2);
+	width: calc(var(--bku) * 64);
+}
+
+.ax-bk__round-name {
+	margin: 0;
+	color: var(--ax-gray);
+	text-align: center;
+	white-space: nowrap;
+}
+
+.ax-bk__matches {
+	display: flex;
+	flex: 1 1 auto;
+	flex-direction: column;
+	/* 경기마다 위아래 여백이 같아서, 고르게 벌리면 뒷 회전 경기가 앞 회전 두 경기 사이 가운데에 온다 */
+	justify-content: space-around;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.ax-bk__match {
+	display: grid;
+	gap: calc(var(--bku) / 2);
+	margin-block: calc(var(--bku) * 1.5);
+	padding: calc(var(--bku) / 2);
+	background: var(--ax-ink);
+	box-shadow: 0 0 0 var(--bku) var(--ax-ink);
+}
+
+.ax-bk__match.is-now {
+	background: var(--ax-red);
+	box-shadow: 0 0 0 var(--bku) var(--ax-red);
+	animation: ax-blink 700ms steps(2) infinite;
+}
+
+.ax-bk__slot {
+	overflow: hidden;
+	padding: 0 calc(var(--bku) * 2);
+	background: var(--ax-violet);
+	color: var(--ax-pale);
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+.ax-bk__slot.is-win {
+	background: var(--ax-pale);
+	color: var(--ax-ink);
+}
+
+.ax-bk__slot.is-lost {
+	background: var(--ax-night-2);
+	color: var(--ax-gray-dark);
+}
+
+.ax-bk__slot.is-empty {
+	background: var(--ax-night);
+	color: var(--ax-gray-dark);
+}
+
+/* 진행자 화면에 넣는 대진표. 사람이 아주 많으면 이 안에서 스크롤한다(프로젝터에는 관전 화면을 띄운다). */
+.ax-bk-panel {
+	overflow: auto;
+	max-height: 72vh;
+}
+
+/* 부전승 자리와 정해 둔 사람 수. 자리보다 많이 정하면 대진을 짤 수 없어서 눈에 띄게 한다. */
+.ax-bye-line {
+	margin: 0;
+	color: var(--ax-pale);
+	font-size: calc(var(--hp) * 12);
+}
+
+.ax-bye-line b {
+	color: var(--ax-yellow);
+	font-weight: 400;
+}
+
+.ax-bye-line.is-over,
+.ax-bye-line.is-over b {
+	color: var(--ax-pink);
+}
+
+/* 경기 결과 두 줄 */
+.ax-duel-result {
+	display: grid;
+	gap: calc(var(--hp) * 2);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	text-align: left;
+}
+
+.ax-duel-result__row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto auto;
+	align-items: center;
+	gap: calc(var(--hp) * 4);
+	padding: calc(var(--hp) * 2) calc(var(--hp) * 4);
+	background: var(--ax-night-2);
+	box-shadow: 0 0 0 var(--hp) var(--ax-ink);
+	font-size: calc(var(--hp2) * 12);
+}
+
+.ax-duel-result__name {
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+.ax-duel-result__row.is-win {
+	background: var(--ax-violet);
+	color: var(--ax-white);
+}
+
+.ax-duel-result__row.is-lost {
+	color: var(--ax-gray-dark);
+}
+
+.ax-duel-result__score {
+	color: var(--ax-lime);
+}
+
+.ax-duel-result__row.is-lost .ax-duel-result__score {
+	color: var(--ax-gray-dark);
+}
+
+.ax-duel-result__mark {
+	min-width: 5ch;
+	text-align: right;
+}
+
+.ax-duel-result__row.is-win .ax-duel-result__mark {
+	color: var(--ax-yellow);
+}
+
+.ax-duel-result__winner,
+.ax-duel-result__tie {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: center;
+	gap: calc(var(--hp) * 4);
+	margin: 0;
+	font-size: calc(var(--hp3) * 12);
+}
+
+.ax-duel-result__winner b {
+	color: var(--ax-yellow);
+	font-weight: 400;
+}
+
+.ax-duel-result__tie {
+	color: var(--ax-pink);
+	font-size: calc(var(--hp2) * 12);
+}
+
+/* 우승자 */
+.ax-champion {
+	position: relative;
+	display: grid;
+	justify-items: center;
+	gap: calc(var(--hp) * 3);
+	padding: calc(var(--hp) * 6) calc(var(--hp) * 12);
+	text-align: center;
+}
+
+.ax-champion__name {
+	margin: 0;
+	color: var(--ax-yellow);
+	font-size: calc(var(--hp4) * 12);
+	line-height: 1.1;
+	text-shadow:
+		var(--hp2) var(--hp2) 0 var(--ax-red),
+		calc(var(--hp2) * 2) calc(var(--hp2) * 2) 0 var(--ax-ink);
+}
+
+.ax-final-stage--duel {
+	align-content: start;
+}
+
+/* ========== 관전 화면 (/arena) ========== */
+.arena .host-app {
+	height: 100vh;
+	grid-template-rows: 1fr;
+}
+
+.arena #stage {
+	align-content: stretch;
+	min-height: 0;
+	overflow: hidden;
+	padding: calc(var(--hp) * 5) calc(var(--hp) * 8);
+}
+
+/* 세로로 쌓고, 대진표가 남는 높이를 다 쓰게 한다(사람이 많아도 한 화면에 들어가도록) */
+.ax-arena {
+	display: flex;
+	flex-direction: column;
+	gap: calc(var(--hp) * 5);
+	min-height: 0;
+}
+
+.ax-arena--center {
+	align-items: center;
+	justify-content: center;
+	text-align: center;
+}
+
+.ax-arena__head {
+	display: grid;
+	justify-items: center;
+	gap: calc(var(--hp) * 3);
+	text-align: center;
+}
+
+.ax-arena__names {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: calc(var(--hp) * 2) calc(var(--hp) * 4);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	color: var(--ax-pale);
+	font-size: calc(var(--hp) * 12);
+}
+
+.ax-arena__game {
+	display: grid;
+	justify-items: center;
+	gap: calc(var(--hp) * 3);
+	padding: calc(var(--hp) * 4) calc(var(--hp) * 6);
+	text-align: center;
+}
+
+.ax-arena__game-head {
+	display: flex;
+	align-items: center;
+	gap: calc(var(--hp) * 4);
+}
+
+.ax-arena__game-icon {
+	width: calc(var(--hp) * 40);
+	height: auto;
+}
+
+.ax-arena__game-title {
+	margin: 0;
+	color: var(--ax-white);
+	font-size: calc(var(--hp2) * 12);
+}
+
+.ax-arena__game-howto {
+	max-width: 46em;
+	margin: 0;
+	color: var(--ax-pale);
+	font-size: calc(var(--hp) * 12);
+	line-height: 1.5;
+}
+
+/* 대진표가 있는 화면(경기 사이·결과·우승): 왼쪽에 경기 소식, 오른쪽에 대진표 */
+.ax-arena--split {
+	display: grid;
+	grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+	grid-template-rows: minmax(0, 1fr);
+	gap: calc(var(--hp) * 10);
+}
+
+.ax-arena__info {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	align-self: center;
+	gap: calc(var(--hp) * 5);
+	min-width: 0;
+	text-align: center;
+}
+
+/* 칸이 좁아서 옆으로 놓으면 이름이 어긋나게 꺾인다. 위아래로 맞세운다(진행자 화면 경기 사이 로비도 같다). */
+.ax-arena__info .ax-vs,
+.ax-lobby__main .ax-vs {
+	flex-direction: column;
+	gap: calc(var(--hp) * 2);
+}
+
+.ax-arena__info .ax-arena__game,
+.ax-arena__info .ax-duel-result {
+	align-self: stretch;
+}
+
+/* 왼쪽 칸이 좁아서 결과 줄은 본문 크기로 적는다(크게 적으면 이름이 잘린다) */
+.ax-arena__info .ax-duel-result__row {
+	font-size: calc(var(--hp) * 12);
+}
+
+/* 대진표 자리. 오른쪽 칸을 꽉 채우고, 그 크기에 맞춰 대진표 칸 단위(--bku)를 정한다(사람이 많아도 한 화면에). */
+.ax-arena__bracket {
+	display: grid;
+	place-items: center;
+	align-self: stretch;
+	min-width: 0;
+	min-height: 0;
+	overflow: hidden;
+	container-type: size;
+}
+
+/* 세로·가로 치수는 .ax-bk 위 주석과 같다(여유로 조금 더 잡는다). 사람이 적으면 진행자 글자 크기(--hp)에서 멈춘다. */
+.ax-arena__bracket > .ax-bk {
+	--bku: min(var(--hp), calc(100cqh / (22 + 40.5 * var(--bk-per))), calc(100cqw / (70 * var(--bk-cols) - 2)));
+}
+
+.ax-arena--intro {
+	justify-content: center;
+}
+
+.ax-arena__intro {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+	gap: calc(var(--hp) * 10);
+}
+
+.ax-arena__intro-info {
+	display: grid;
+	gap: calc(var(--hp) * 4);
+}
+
+.ax-arena__wait {
+	margin: 0;
+	color: var(--ax-yellow);
+	font-size: calc(var(--hp) * 12);
+}
+
+.ax-arena__demo {
+	width: calc(var(--hp) * 120);
+	height: min(calc(var(--hp) * 216), 66vh);
+	/* .ax-demo 의 테두리가 6px 바깥까지 칠해진다 */
+	margin: 6px;
+}
+
+.ax-arena--final {
+	position: relative;
+}
+
+/* ---------- 1:1 대결 두 화면 ---------- */
+.ax-duel {
+	position: relative;
+	display: grid;
+	grid-template-rows: auto auto minmax(0, 1fr);
+	gap: calc(var(--hp) * 3);
+	min-height: 0;
+}
+
+.ax-duel__top {
+	display: flex;
+	align-items: center;
+	gap: calc(var(--hp) * 5);
+}
+
+.ax-duel__game {
+	display: flex;
+	flex: 1;
+	align-items: center;
+	justify-content: center;
+	gap: calc(var(--hp) * 3);
+	color: var(--ax-white);
+	font-size: calc(var(--hp2) * 12);
+}
+
+.ax-duel__icon {
+	width: calc(var(--hp) * 32);
+	height: auto;
+}
+
+.ax-duel__clock {
+	min-width: 5ch;
+	text-align: right;
+	font-size: calc(var(--hp3) * 12);
+}
+
+.ax-duel__bar {
+	width: 100%;
+	height: calc(var(--hp) * 4);
+	background: var(--ax-ink);
+	box-shadow: 0 0 0 var(--hp) var(--ax-ink);
+}
+
+.ax-duel__bar > i {
+	display: block;
+	height: 100%;
+	background: repeating-linear-gradient(90deg, var(--ax-yellow) 0 calc(var(--hp) * 7), var(--ax-gold) calc(var(--hp) * 7) calc(var(--hp) * 9));
+	transform-origin: left;
+}
+
+.ax-duel__panes {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+	align-items: stretch;
+	gap: calc(var(--hp) * 4);
+	min-height: 0;
+}
+
+.ax-duel__pane {
+	display: grid;
+	grid-template-rows: auto minmax(0, 1fr) auto;
+	gap: calc(var(--hp) * 2);
+	min-height: 0;
+	padding: calc(var(--hp) * 3);
+	background: var(--ax-night);
+	box-shadow: 0 0 0 var(--hp) var(--ax-ink);
+}
+
+.ax-duel__name {
+	margin: 0;
+	overflow: hidden;
+	color: var(--ax-white);
+	font-size: calc(var(--hp2) * 12);
+	text-align: center;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+/* 놀이판: 캔버스가 남는 자리를 다 쓰고 그 아래에 안내 한 줄(.ax-hint) */
+.ax-duel__stage.ax-stage {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+}
+
+.ax-duel__stage.ax-stage > .px-screen {
+	flex: 1 1 0;
+	width: 100%;
+	height: auto;
+	min-height: 0;
+}
+
+/* 프로젝터 글자 한 칸(--fp2)은 안내 한 줄로는 너무 커서 작은 칸으로 되돌린다 */
+.ax-duel__stage.ax-stage > .ax-hint {
+	width: auto;
+	height: calc(var(--hp) * 12 * 1.25 * 2);
+	font-size: calc(var(--hp) * 12);
+}
+
+.ax-duel__score {
+	margin: 0;
+	color: var(--ax-lime);
+	font-size: calc(var(--hp2) * 12);
+	text-align: center;
+}
+
+.ax-duel__vs {
+	align-self: center;
+	color: var(--ax-red);
+	font-size: calc(var(--hp2) * 12);
+	text-shadow: var(--hp) var(--hp) 0 var(--ax-ink);
+}
+
+.ax-duel__overlay {
+	position: absolute;
+	inset: 0;
+	z-index: 2;
+	display: grid;
+	place-items: center;
+	pointer-events: none;
 }

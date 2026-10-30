@@ -3,6 +3,10 @@ export type Button = "red" | "green" | "blue" | "finish";
 
 export const BUTTONS: readonly Button[] = ["red", "green", "blue", "finish"];
 
+export function isButton(value: unknown): value is Button {
+	return typeof value === "string" && (BUTTONS as readonly string[]).includes(value);
+}
+
 /** 게임 시작 뒤 경과 시간(ms)이 제한 시간 안인지 */
 export function isWithin(t: number, durationMs: number): boolean {
 	return t >= 0 && t <= durationMs;

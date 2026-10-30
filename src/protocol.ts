@@ -1,4 +1,5 @@
-import { type GameState, PLAN_LIMIT } from "./domain/game";
+import { type GameState, isMode, type Mode, PLAN_LIMIT } from "./domain/game";
+import { type Button, isButton } from "./domain/games/button";
 import { type GameId, isGameId } from "./domain/games/catalog";
 import type { PlayerId } from "./domain/player";
 import { parseSoloRules, type SoloRules } from "./domain/solo/rules";
@@ -8,11 +9,29 @@ export type PlayerMessage =
 	| { readonly type: "hello"; readonly token: string | null }
 	| { readonly type: "claim"; readonly playerId: PlayerId }
 	/** playAt은 어느 판의 기록인지 가리킨다(같은 번호로 다시 한 판과 구분) */
-	| { readonly type: "submit"; readonly roundNo: number; readonly playAt: number; readonly score: number };
+	| { readonly type: "submit"; readonly roundNo: number; readonly playAt: number; readonly score: number }
+	/**
+	 * 토너먼트에서 버튼을 누른 순간을 관전 화면에 중계해 달라고 보낸다.
+	 * t는 게임 시작 뒤 경과 ms, score는 그 누름까지의 점수(관전 화면이 숫자를 그대로 보여 준다).
+	 */
+	| {
+			readonly type: "press";
+			readonly roundNo: number;
+			readonly playAt: number;
+			readonly button: Button;
+			readonly t: number;
+			readonly score: number;
+	  };
 
 /** 진행자 화면 → 서버 */
 export type HostMessage =
 	| { readonly type: "setRoster"; readonly names: readonly string[] }
+	/** 진행 방식(점수전·토너먼트)을 고른다 */
+	| { readonly type: "setMode"; readonly mode: Mode }
+	/** 토너먼트에서 부전승으로 정해 둘 사람을 통째로 바꾼다 */
+	| { readonly type: "setByes"; readonly playerIds: readonly PlayerId[] }
+	/** 입장한 사람으로 토너먼트 대진을 짠다 */
+	| { readonly type: "drawBracket" }
 	/** 순서표에서 아직 안 한 부분을 통째로 바꾼다 */
 	| { readonly type: "setPlan"; readonly gameIds: readonly GameId[] }
 	/** 혼자 하는 도전 세 종목의 성공 기준을 바꾼다 */
@@ -44,6 +63,19 @@ export type ServerMessage =
 	| { readonly type: "you"; readonly playerId: PlayerId | null; readonly token: string | null }
 	/** 이 폰의 기록을 저장했다. 전체 상태가 오기 전에 바로 알려서 폰이 다시 보내지 않게 한다. */
 	| { readonly type: "saved"; readonly roundNo: number; readonly playAt: number }
+	/**
+	 * 토너먼트 중계. 어느 폰이 언제 무슨 버튼을 눌렀는지 관전 화면·진행자 화면에만 바로 보낸다.
+	 * 상태가 아니라 중계라서 저장하지 않고 모아 보내지도 않는다.
+	 */
+	| {
+			readonly type: "press";
+			readonly playerId: PlayerId;
+			readonly roundNo: number;
+			readonly playAt: number;
+			readonly button: Button;
+			readonly t: number;
+			readonly score: number;
+	  }
 	| { readonly type: "rejected"; readonly reason: string };
 
 const LIMITS = { id: 64, token: 128, name: 30, roster: 100 } as const;
@@ -56,6 +88,11 @@ const isInteger = (value: unknown): value is number => typeof value === "number"
 function parseNames(value: unknown): readonly string[] | null {
 	if (!Array.isArray(value) || value.length > LIMITS.roster) return null;
 	return value.every((name) => isText(name, LIMITS.name)) ? (value as string[]) : null;
+}
+
+function parsePlayerIds(value: unknown): readonly PlayerId[] | null {
+	if (!Array.isArray(value) || value.length > LIMITS.roster) return null;
+	return value.every((id) => isText(id, LIMITS.id)) ? (value as PlayerId[]) : null;
 }
 
 function parseGameIds(value: unknown): readonly GameId[] | null {
@@ -71,10 +108,20 @@ const PARSERS: Readonly<Record<ClientMessage["type"], (fields: Fields) => Client
 	claim: ({ playerId }) => (isText(playerId, LIMITS.id) ? { type: "claim", playerId } : null),
 	submit: ({ roundNo, playAt, score }) =>
 		isInteger(roundNo) && isInteger(playAt) && typeof score === "number" ? { type: "submit", roundNo, playAt, score } : null,
+	press: ({ roundNo, playAt, button, t, score }) =>
+		isInteger(roundNo) && isInteger(playAt) && isButton(button) && isInteger(t) && t >= 0 && isInteger(score) && score >= 0
+			? { type: "press", roundNo, playAt, button, t, score }
+			: null,
 	setRoster: ({ names }) => {
 		const parsed = parseNames(names);
 		return parsed === null ? null : { type: "setRoster", names: parsed };
 	},
+	setMode: ({ mode }) => (isMode(mode) ? { type: "setMode", mode } : null),
+	setByes: ({ playerIds }) => {
+		const parsed = parsePlayerIds(playerIds);
+		return parsed === null ? null : { type: "setByes", playerIds: parsed };
+	},
+	drawBracket: () => ({ type: "drawBracket" }),
 	setPlan: ({ gameIds }) => {
 		const parsed = parseGameIds(gameIds);
 		return parsed === null ? null : { type: "setPlan", gameIds: parsed };
@@ -112,6 +159,9 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
 const HOST_TYPES: ReadonlySet<ClientMessage["type"]> = new Set([
 	"setRoster",
+	"setMode",
+	"setByes",
+	"drawBracket",
 	"setPlan",
 	"setSoloRules",
 	"openIntro",

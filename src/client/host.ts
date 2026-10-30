@@ -1,7 +1,8 @@
-import { type GameState, joinedPlayers, lockedPlanLength, nextGame } from "../domain/game";
+import { currentMatch, type GameState, isMode, joinedPlayers, lockedPlanLength, type Mode, nextGame } from "../domain/game";
 import { GAMES, type GameId, isGameId } from "../domain/games/catalog";
 import type { PlayerId } from "../domain/player";
 import { clampSoloRule, DEFAULT_SOLO_RULES, SOLO_RULE_LIMITS, type SoloRules } from "../domain/solo/rules";
+import { matchWinner, MIN_ENTRANTS } from "../domain/tournament";
 import { needsHostKey } from "../host-access";
 import type { HostMessage, ServerMessage } from "../protocol";
 import { arcade } from "./arcade-sound";
@@ -13,6 +14,7 @@ import { editDraft } from "./host/plan-draft";
 import { planEditor } from "./host/plan-editor";
 import { mountDemo } from "./games/demo";
 import { finishedStage, introStage, lobbyStage, resultsStage, roundStage, type StageOptions } from "./host/stages";
+import { byeOverflow, tournamentStage } from "./host/tournament";
 import { type ConnectionStatus, connect } from "./net";
 import { sfx, unlockSound } from "./sound";
 
@@ -33,7 +35,12 @@ type View = {
 
 const REJECTION_TEXT: Readonly<Record<string, string>> = {
 	no_next_game: "순서표에 남은 게임이 없어요. 순서표에 게임을 넣어 주세요.",
-	not_enough_players: "입장한 사람이 있어야 시작할 수 있어요.",
+	not_enough_players: `입장한 사람이 있어야 시작할 수 있어요(토너먼트는 ${MIN_ENTRANTS}명 이상).`,
+	no_next_match: "치를 경기가 없어요. 대진을 짜거나 처음부터 다시 해 주세요.",
+	wrong_mode: "토너먼트 방식에서만 할 수 있어요.",
+	already_started: "라운드를 시작한 뒤에는 방식과 대진을 바꿀 수 없어요. '처음부터'를 누르세요.",
+	tie_match: "동점이라 승자를 가릴 수 없어요. '재경기'를 눌러 주세요.",
+	too_many_byes: "부전승으로 정한 사람이 부전승 자리보다 많아요. 지정을 줄여 주세요.",
 	plan_too_long: "순서표는 30라운드까지예요.",
 	nothing_played: "끝난 라운드가 있어야 최종 순위를 낼 수 있어요.",
 	wrong_phase: "지금은 할 수 없는 동작이에요.",
@@ -196,6 +203,7 @@ function stageOptions(): StageOptions {
 }
 
 function stageHtml(game: GameState): string {
+	if (game.mode === "tournament") return tournamentStage(game, stageOptions());
 	switch (game.phase.kind) {
 		case "lobby":
 			return lobbyStage(game, stageOptions());
@@ -214,7 +222,7 @@ function stageHtml(game: GameState): string {
 function stageEffects(game: GameState): void {
 	const key =
 		game.phase.kind === "results"
-			? `results:${game.phase.round.no}:${view.resultsTab}`
+			? `results:${game.phase.round.no}:${game.phase.round.playAt}:${view.resultsTab}`
 			: game.phase.kind === "finished"
 				? `finished:${game.history.length}:${view.resultsTab}`
 				: null;
@@ -223,6 +231,19 @@ function stageEffects(game: GameState): void {
 		return;
 	}
 	revealedFor = key;
+	if (game.mode === "tournament") {
+		if (game.phase.kind === "results") {
+			setTimeout(() => arcade.drum(), 200);
+			setTimeout(() => arcade.jar(), 700);
+			return;
+		}
+		setTimeout(() => {
+			arcade.fanfare();
+			const box = stage.querySelector<HTMLElement>(".ax-final-stage");
+			if (box !== null) confetti(box, 6000);
+		}, 500);
+		return;
+	}
 	if (game.phase.kind === "results" && view.resultsTab === "round") {
 		const count = game.phase.round.participantIds.length;
 		for (let i = 0; i < count; i++) setTimeout(() => arcade.reveal(), 300 + i * 110);
@@ -276,6 +297,7 @@ function tickClock(): void {
 
 function controlsHtml(game: GameState): string {
 	if (view.editing !== null) return "";
+	if (game.mode === "tournament") return tournamentControls(game);
 	switch (game.phase.kind) {
 		case "lobby":
 			return lobbyControls(game);
@@ -318,12 +340,81 @@ function controlsHtml(game: GameState): string {
 	}
 }
 
+/** 진행 방식 고르기. 라운드를 하나라도 한 뒤에는 바꿀 수 없다. */
+function modeTabs(game: GameState): string {
+	const locked = game.history.length > 0;
+	const tab = (mode: Mode, label: string) =>
+		`<button type="button" class="ax-btn${game.mode === mode ? " is-selected" : ""}" data-action="mode" data-id="${mode}" ${locked ? "disabled" : ""}>${label}</button>`;
+	return `<div class="ax-tabs" role="group" aria-label="진행 방식">${tab("points", "점수전")}${tab("tournament", "토너먼트")}</div>`;
+}
+
+/** 토너먼트 진행 버튼 */
+function tournamentControls(game: GameState): string {
+	switch (game.phase.kind) {
+		case "lobby": {
+			if (game.bracket === null) {
+				const joined = joinedPlayers(game).length;
+				return `<div class="ax-controls">
+					${modeTabs(game)}
+					<button type="button" class="ax-btn" data-action="plan">순서표</button>
+					<button type="button" class="ax-btn" data-action="roster">명단</button>
+					<button type="button" class="ax-btn" data-action="solo">도전 기준</button>
+					<span class="ax-controls__spacer"></span>
+					<button type="button" class="ax-btn ax-btn--go" data-action="draw" ${joined >= MIN_ENTRANTS && byeOverflow(game) === 0 ? "" : "disabled"}>대진 짜기 ▶</button>
+				</div>`;
+			}
+			const match = currentMatch(game);
+			const next = nextGame(game);
+			const label = match === null ? "경기 끝" : next === null ? "순서표를 채워 주세요" : `${esc(GAMES[next].title)} ▶`;
+			return `<div class="ax-controls">
+				${modeTabs(game)}
+				<button type="button" class="ax-btn" data-action="plan">순서표</button>
+				<button type="button" class="ax-btn" data-action="roster">명단</button>
+				<button type="button" class="ax-btn" data-action="reset">처음부터</button>
+				<span class="ax-controls__spacer"></span>
+				${game.history.length === 0 ? `<button type="button" class="ax-btn" data-action="draw" ${byeOverflow(game) === 0 ? "" : "disabled"}>대진 다시 짜기</button>` : ""}
+				<button type="button" class="ax-btn ax-btn--go" data-action="intro" ${match !== null && next !== null ? "" : "disabled"}>${label}</button>
+			</div>`;
+		}
+		case "intro":
+			return `<div class="ax-controls">
+				<button type="button" class="ax-btn" data-action="intro-back">← 뒤로</button>
+				<span class="ax-controls__hint">설명을 다 봤으면 다음을 눌러요</span>
+				<span class="ax-controls__spacer"></span>
+				<button type="button" class="ax-btn ax-btn--go" data-action="start">다음 ▶ 3·2·1</button>
+			</div>`;
+		case "playing":
+			return `<div class="ax-controls">
+				<span class="ax-controls__hint">경기 중이에요</span>
+				<span class="ax-controls__spacer"></span>
+				<button type="button" class="ax-btn" data-action="cancel-round">경기 취소</button>
+				<button type="button" class="ax-btn ax-btn--go" data-action="close-round">지금 마감</button>
+			</div>`;
+		case "results": {
+			const tie = matchWinner(game.phase.round) === null;
+			return `<div class="ax-controls">
+				<span class="ax-controls__hint">${tie ? "동점이에요. 같은 두 사람이 다시 붙어요." : "확정하면 이긴 사람이 올라가요"}</span>
+				<span class="ax-controls__spacer"></span>
+				${tie ? `<button type="button" class="ax-btn ax-btn--go" data-action="rematch">재경기 ▶</button>` : `<button type="button" class="ax-btn" data-action="cancel-round">경기 취소</button><button type="button" class="ax-btn ax-btn--go" data-action="confirm-round">결과 확정 ▶</button>`}
+			</div>`;
+		}
+		case "finished":
+			return `<div class="ax-controls">
+				<span class="ax-controls__hint">우승자가 나왔어요</span>
+				<span class="ax-controls__spacer"></span>
+				<button type="button" class="ax-btn" data-action="reopen">계속하기</button>
+				<button type="button" class="ax-btn" data-action="reset">처음부터 다시</button>
+			</div>`;
+	}
+}
+
 function lobbyControls(game: GameState): string {
 	const next = nextGame(game);
 	const joined = joinedPlayers(game).length;
 	const canStart = next !== null && joined >= 1;
 	const startLabel = next === null ? "시작 ▶" : `R${game.history.length + 1} ${esc(GAMES[next].title)} ▶`;
 	return `<div class="ax-controls">
+		${modeTabs(game)}
 		<button type="button" class="ax-btn" data-action="plan">순서표</button>
 		<button type="button" class="ax-btn" data-action="roster">명단</button>
 		<button type="button" class="ax-btn" data-action="solo">도전 기준</button>
@@ -448,8 +539,17 @@ function handleClick(event: MouseEvent, send: (message: HostMessage) => void): v
 		case "close-round":
 			return send({ type: "closeRound" });
 		case "cancel-round":
-			if (confirm("이번 라운드를 없던 일로 할까요? 점수 없이 같은 게임을 다시 해요.")) send({ type: "cancelRound" });
+			if (confirm(game.mode === "tournament" ? "이번 경기를 없던 일로 할까요? 같은 두 사람이 다시 붙어요." : "이번 라운드를 없던 일로 할까요? 점수 없이 같은 게임을 다시 해요."))
+				send({ type: "cancelRound" });
 			return;
+		case "rematch":
+			return send({ type: "cancelRound" });
+		case "mode":
+			if (!isMode(id)) return;
+			return send({ type: "setMode", mode: id });
+		case "draw":
+			if (game.bracket !== null && !confirm("대진을 다시 짤까요? 지금 짜 둔 대진은 사라져요.")) return;
+			return send({ type: "drawBracket" });
 		case "confirm-round":
 			return send({ type: "confirmRound" });
 		case "confirm-finish":
@@ -461,7 +561,7 @@ function handleClick(event: MouseEvent, send: (message: HostMessage) => void): v
 		case "reopen":
 			return send({ type: "reopenGame" });
 		case "reset":
-			if (confirm("처음부터 다시 할까요? 입장과 순서표는 그대로 두고 라운드 기록만 지워요.")) send({ type: "reset" });
+			if (confirm(game.mode === "tournament" ? "처음부터 다시 할까요? 입장과 순서표는 그대로 두고 경기 기록과 대진을 지워요." : "처음부터 다시 할까요? 입장과 순서표는 그대로 두고 라운드 기록만 지워요.")) send({ type: "reset" });
 			return;
 		case "tab-round":
 			return update({ resultsTab: "round" });
@@ -469,6 +569,12 @@ function handleClick(event: MouseEvent, send: (message: HostMessage) => void): v
 			return update({ resultsTab: "total" });
 		case "select":
 			return update({ selected: view.selected === id ? null : id });
+		case "bye":
+			send({ type: "setByes", playerIds: [...game.byeIds, id] });
+			return update({ selected: null });
+		case "unbye":
+			send({ type: "setByes", playerIds: game.byeIds.filter((byeId) => byeId !== id) });
+			return update({ selected: null });
 		case "release":
 			if (confirm("입장을 풀면 그 사람 폰은 이름 고르기 화면으로 돌아가요. 풀까요?")) send({ type: "release", playerId: id });
 			return update({ selected: null });
@@ -487,7 +593,11 @@ function handleClick(event: MouseEvent, send: (message: HostMessage) => void): v
 				.map((name) => name.trim())
 				.filter((name) => name.length > 0);
 			const removed = [...before].filter((name) => !names.includes(name));
-			if (removed.length > 0 && game.history.length > 0 && !confirm(`${removed.join(", ")} 님을 빼면 그 사람 기록도 순위에서 빠져요. 저장할까요?`)) return;
+			const warning =
+				game.mode === "tournament"
+					? `${removed.join(", ")} 님을 빼면 대진을 맞출 수 없어서 대진과 경기 기록을 지우고 다시 짜요. 저장할까요?`
+					: `${removed.join(", ")} 님을 빼면 그 사람 기록도 순위에서 빠져요. 저장할까요?`;
+			if (removed.length > 0 && game.history.length > 0 && !confirm(warning)) return;
 			send({ type: "setRoster", names });
 			return update({ editing: null });
 		}

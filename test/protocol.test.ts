@@ -11,6 +11,8 @@ describe("parseClientMessage", () => {
 		expect(parse({ type: "hello", token: null })).toEqual({ type: "hello", token: null });
 		expect(parse({ type: "claim", playerId: "p1" })).toEqual({ type: "claim", playerId: "p1" });
 		expect(parse({ type: "submit", roundNo: 2, playAt: 1_004_000, score: 1679 })).toEqual({ type: "submit", roundNo: 2, playAt: 1_004_000, score: 1679 });
+		const press = { type: "press", roundNo: 2, playAt: 1_004_000, button: "red", t: 820, score: 12 };
+		expect(parse(press)).toEqual(press);
 	});
 
 	it("진행자 메시지를 해석한다", () => {
@@ -21,6 +23,11 @@ describe("parseClientMessage", () => {
 			expect(parse({ type })).toEqual({ type });
 		}
 		expect(parse({ type: "release", playerId: "p3" })).toEqual({ type: "release", playerId: "p3" });
+		expect(parse({ type: "drawBracket" })).toEqual({ type: "drawBracket" });
+		expect(parse({ type: "setByes", playerIds: ["p1", "p2"] })).toEqual({ type: "setByes", playerIds: ["p1", "p2"] });
+		expect(parse({ type: "setByes", playerIds: [] })).toEqual({ type: "setByes", playerIds: [] });
+		expect(parse({ type: "setMode", mode: "tournament" })).toEqual({ type: "setMode", mode: "tournament" });
+		expect(parse({ type: "setMode", mode: "points" })).toEqual({ type: "setMode", mode: "points" });
 		const rules = { reactionPassMs: 400, stopwatchAllowedMs: 1200, circlePassPercent: 80 };
 		expect(parse({ type: "setSoloRules", rules })).toEqual({ type: "setSoloRules", rules });
 		expect(parse({ type: "setSoloRules", rules: DEFAULT_SOLO_RULES })).toEqual({ type: "setSoloRules", rules: DEFAULT_SOLO_RULES });
@@ -59,6 +66,17 @@ describe("parseClientMessage", () => {
 		expect(parse({ type: "setSoloRules", rules: { reactionPassMs: 230 } })).toBeNull();
 		expect(parse({ type: "setSoloRules", rules: "230" })).toBeNull();
 		expect(parse({ type: "setSoloRules" })).toBeNull();
+		expect(parse({ type: "setMode", mode: "duel" })).toBeNull();
+		expect(parse({ type: "setByes", playerIds: "p1" })).toBeNull();
+		expect(parse({ type: "setByes", playerIds: ["p1", 2] })).toBeNull();
+		expect(parse({ type: "setByes", playerIds: Array.from({ length: 101 }, (_, i) => `p${i}`) })).toBeNull();
+		expect(parse({ type: "setByes" })).toBeNull();
+		expect(parse({ type: "setMode" })).toBeNull();
+		expect(parse({ type: "press", roundNo: 1, playAt: 5, button: "purple", t: 10, score: 1 })).toBeNull();
+		expect(parse({ type: "press", roundNo: 1, playAt: 5, button: "red", t: -1, score: 1 })).toBeNull();
+		expect(parse({ type: "press", roundNo: 1, playAt: 5, button: "red", t: 10.5, score: 1 })).toBeNull();
+		expect(parse({ type: "press", roundNo: 1, playAt: 5, button: "red", t: 10, score: -1 })).toBeNull();
+		expect(parse({ type: "press", roundNo: 1, playAt: 5, button: "red", t: 10 })).toBeNull();
 	});
 });
 
@@ -71,6 +89,11 @@ describe("isHostMessage", () => {
 		expect(isHostMessage({ type: "closeIntro" })).toBe(true);
 		expect(isHostMessage({ type: "release", playerId: "p1" })).toBe(true);
 		expect(isHostMessage({ type: "setSoloRules", rules: DEFAULT_SOLO_RULES })).toBe(true);
+		expect(isHostMessage({ type: "setMode", mode: "tournament" })).toBe(true);
+		expect(isHostMessage({ type: "drawBracket" })).toBe(true);
+		expect(isHostMessage({ type: "setByes", playerIds: [] })).toBe(true);
+		// 관전 중계는 폰이 보내는 것이라 진행자 메시지가 아니다
+		expect(isHostMessage({ type: "press", roundNo: 1, playAt: 5, button: "red", t: 10, score: 1 })).toBe(false);
 		expect(isHostMessage({ type: "claim", playerId: "p1" })).toBe(false);
 		expect(isHostMessage({ type: "hello", token: null })).toBe(false);
 		expect(isHostMessage({ type: "submit", roundNo: 1, playAt: 5, score: 1 })).toBe(false);

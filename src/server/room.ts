@@ -5,6 +5,7 @@ import {
 	closeIntro,
 	closeRound,
 	confirmRound,
+	drawTournament,
 	EMPTY_GAME,
 	finishGame,
 	type GameState,
@@ -13,6 +14,8 @@ import {
 	release,
 	reopenGame,
 	resetGame,
+	setByes,
+	setMode,
 	setPlan,
 	setRoster,
 	setSoloRules,
@@ -34,7 +37,17 @@ export const ROLE_HEADER = "x-bishibashi-role";
  */
 const BROADCAST_DELAY_MS = { playing: 250, other: 40 } as const;
 
-export type Role = "host" | "player";
+export type Role = "host" | "player" | "arena";
+
+/** 주소나 헤더에 적힌 역할. 알아볼 수 없으면 폰(참가자)으로 본다. */
+export function roleFrom(value: string | null): Role {
+	return value === "host" || value === "arena" ? value : "player";
+}
+
+/** 대진을 섞는 데 쓰는 0 이상 1 미만 난수 */
+function randomFloat(): number {
+	return (crypto.getRandomValues(new Uint32Array(1))[0] ?? 0) / 2 ** 32;
+}
 
 /** 연결마다 붙여 두는 정보. Durable Object가 잠들었다 깨어나도 남는다. */
 type Attachment = { readonly role: Role; readonly playerId: PlayerId | null };
@@ -60,7 +73,7 @@ export class GameRoom extends DurableObject<Env> {
 
 	override async fetch(request: Request): Promise<Response> {
 		if (request.headers.get("Upgrade") !== "websocket") return new Response("WebSocket only", { status: 426 });
-		const role: Role = request.headers.get(ROLE_HEADER) === "host" ? "host" : "player";
+		const role = roleFrom(request.headers.get(ROLE_HEADER));
 		const { 0: client, 1: server } = new WebSocketPair();
 		this.accept(server, role);
 		return new Response(null, { status: 101, webSocket: client });
@@ -138,6 +151,31 @@ export class GameRoom extends DurableObject<Env> {
 				// 저장까지 끝났으니 이 폰에만 바로 알린다(모아 보내는 전체 상태를 기다리지 않게)
 				return send(ws, { type: "saved", roundNo: message.roundNo, playAt: message.playAt });
 			}
+			case "press": {
+				// 중계일 뿐이라 거절을 알려 주지 않는다(한 판에 수십 번 오므로 조용히 버린다)
+				if (attachment.playerId === null || this.game.phase.kind !== "playing") return;
+				const { round } = this.game.phase;
+				if (round.no !== message.roundNo || round.playAt !== message.playAt) return;
+				if (!round.participantIds.includes(attachment.playerId)) return;
+				return this.relayPress({ ...message, type: "press", playerId: attachment.playerId });
+			}
+		}
+	}
+
+	/**
+	 * 누른 버튼을 관전 화면·진행자 화면에만 바로 보낸다. 상태가 아니라 중계라서 저장하지 않고 모아 보내지도 않는다.
+	 * 관전 화면은 라운드 seed로 같은 게임을 띄워 두고 이 입력을 되짚어 같은 장면을 그린다.
+	 */
+	private relayPress(message: ServerMessage): void {
+		const json = JSON.stringify(message);
+		for (const ws of this.ctx.getWebSockets()) {
+			const { role } = attachmentOf(ws);
+			if ((role !== "arena" && role !== "host") || ws.readyState !== WebSocket.OPEN) continue;
+			try {
+				ws.send(json);
+			} catch {
+				// 끊긴 연결은 닫힘 이벤트 때 정리된다
+			}
 		}
 	}
 
@@ -159,6 +197,12 @@ export class GameRoom extends DurableObject<Env> {
 				const taken = new Set(this.game.players.map((player) => player.id));
 				return setRoster(this.game, message.names, () => uniqueShortId(taken));
 			}
+			case "setMode":
+				return setMode(this.game, message.mode);
+			case "setByes":
+				return setByes(this.game, message.playerIds);
+			case "drawBracket":
+				return drawTournament(this.game, randomFloat);
 			case "setPlan":
 				return setPlan(this.game, message.gameIds);
 			case "setSoloRules":

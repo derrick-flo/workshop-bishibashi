@@ -14,6 +14,7 @@ import type { GameView } from "./games/types";
 import { type ConnectionStatus, connect } from "./net";
 import { mountDemo } from "./games/demo";
 import { connectingScreen, finishScreen, introScreen, joinScreen, lobbyScreen, resultScreen, waitScreen } from "./player/screens";
+import { duelFinishScreen, duelIntroScreen, duelLobbyScreen, duelResultScreen, duelWatchScreen } from "./player/duel-screens";
 import { buzz, sfx, soundReady, unlockSound } from "./sound";
 import { keepAwake } from "./wake";
 
@@ -49,6 +50,8 @@ type Run = {
 	readonly roundNo: number;
 	readonly playAt: number;
 	readonly practice: boolean;
+	/** 토너먼트에서 뛰는 판이면 누른 버튼을 관전 화면에 중계한다 */
+	readonly relay: boolean;
 	readonly perfPlayAt: number;
 	readonly durationMs: number;
 	readonly maxScore: number;
@@ -218,18 +221,19 @@ function render(): void {
 		stopRun();
 		return paint(joinScreen(game, view.picking));
 	}
-	if (game.phase.kind === "playing") return startRun(game.phase.round, me);
+	const duel = game.mode === "tournament";
+	if (game.phase.kind === "playing") return startRun(game, game.phase.round, me);
 	stopRun();
 	if (game.phase.kind === "intro") {
-		paint(introScreen(game));
+		paint(duel ? duelIntroScreen(game, me) : introScreen(game));
 		return mountIntroDemo();
 	}
 	if (game.phase.kind === "results") {
 		playResultSound(game.phase.round, me);
-		return paint(resultScreen(game, game.phase.round, me));
+		return paint(duel ? duelResultScreen(game, game.phase.round, me) : resultScreen(game, game.phase.round, me));
 	}
-	if (game.phase.kind === "finished") return paint(finishScreen(game, me));
-	return paint(lobbyScreen(game, me, soundReady()));
+	if (game.phase.kind === "finished") return paint(duel ? duelFinishScreen(game, me) : finishScreen(game, me));
+	return paint(duel ? duelLobbyScreen(game, me, soundReady()) : lobbyScreen(game, me, soundReady()));
 }
 
 /** 설명 화면의 시연을 한 번만 붙인다(상태가 와서 다시 그려도 이어서 돈다) */
@@ -265,12 +269,14 @@ function playResultSound(round: Round, me: Player): void {
 
 // ---------- 미니게임 한 판 ----------
 
-function startRun(round: Round, me: Player): void {
+function startRun(game: GameState, round: Round, me: Player): void {
 	// 같은 번호라도 취소 후 다시 시작한 판이면 새로 한다
 	if (run !== null && run.roundNo === round.no && run.playAt === round.playAt) return;
 	stopRun();
 	const info = GAMES[round.gameId];
 	const practice = !round.participantIds.includes(me.id);
+	// 토너먼트는 둘이 붙는 걸 다 같이 보는 자리라 남의 경기 때 연습하지 않고 구경한다
+	if (practice && game.mode === "tournament") return paint(duelWatchScreen(game, round));
 	const perfPlayAt = performance.now() + (round.playAt - clock.now());
 	// 이미 기록을 냈거나 보내는 중이면 같은 라운드를 다시 하지 않는다(새로고침 등)
 	if (!practice && (round.scores[me.id] !== undefined || isPendingFor(round))) {
@@ -289,23 +295,35 @@ function startRun(round: Round, me: Player): void {
 		<div class="play__stage"></div>
 		<div class="play__overlay ax-overlay" role="status"></div>
 	</section>`;
-	const game = MOUNTS[round.gameId](pick(root, ".play__stage"), round.seed);
+	const view = MOUNTS[round.gameId](pick(root, ".play__stage"), round.seed);
 	const controller = createController((button, at) => {
 		const t = at - perfPlayAt;
 		if (run === null || run.ended || t < 0 || t > info.durationMs) return;
 		run.game.press(button, t);
+		// 관전 화면이 같은 장면을 되짚을 수 있도록 누른 순간과 그때 점수를 보낸다
+		if (run.relay) {
+			connection.send({
+				type: "press",
+				roundNo: round.no,
+				playAt: round.playAt,
+				button,
+				t: Math.round(t),
+				score: submittableScore(run.game.score(), info.maxScore),
+			});
+		}
 	});
-	controller.setLabels(game.labels);
+	controller.setLabels(view.labels);
 	pick(root, ".play").append(controller.element);
 	run = {
 		roundNo: round.no,
 		playAt: round.playAt,
 		practice,
+		relay: game.mode === "tournament",
 		perfPlayAt,
 		durationMs: info.durationMs,
 		maxScore: info.maxScore,
 		formatScore: info.formatScore,
-		game,
+		game: view,
 		controller,
 		ended: false,
 		countdown: null,

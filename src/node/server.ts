@@ -3,7 +3,7 @@ import type { Duplex } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { needsHostKey } from "../host-access";
-import { GameRoom } from "../server/room";
+import { GameRoom, roleFrom } from "../server/room";
 import { isHostKey } from "../server/secrets";
 import { NodeRoomState } from "./room-state";
 import { serveStatic } from "./static";
@@ -45,17 +45,20 @@ server.on("upgrade", (request, socket, head) => {
 	});
 });
 
-/** /ws?role=host 는 키가 맞을 때만(내 컴퓨터·사내망 주소면 키 없이) 진행자로 붙인다. src/server/index.ts 와 같은 규칙. */
+/**
+ * /ws?role=host 는 키가 맞을 때만(내 컴퓨터·사내망 주소면 키 없이) 진행자로 붙인다. src/server/index.ts 와 같은 규칙.
+ * /ws?role=arena 는 보기만 하는 관전 화면이라 키 없이 붙는다.
+ */
 async function upgrade(request: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
 	const host = request.headers.host;
 	if (host === undefined) return refuse(socket, 400, "Bad Request");
 	const url = new URL(request.url ?? "/", `http://${host}`);
 	if (url.pathname !== "/ws") return refuse(socket, 404, "Not Found");
-	const wantsHost = url.searchParams.get("role") === "host";
-	if (wantsHost && needsHostKey(url.hostname) && !(await isHostKey(url.searchParams.get("key"), HOST_KEY))) {
+	const role = roleFrom(url.searchParams.get("role"));
+	if (role === "host" && needsHostKey(url.hostname) && !(await isHostKey(url.searchParams.get("key"), HOST_KEY))) {
 		return refuse(socket, 403, "Forbidden");
 	}
-	sockets.handleUpgrade(request, socket, head, (ws) => room.accept(state.wrap(ws), wantsHost ? "host" : "player"));
+	sockets.handleUpgrade(request, socket, head, (ws) => room.accept(state.wrap(ws), role));
 }
 
 function refuse(socket: Duplex, status: number, text: string): void {
