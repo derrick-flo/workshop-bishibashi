@@ -245,6 +245,8 @@
 .ax-badge {
 	display: inline-block;
 	align-self: flex-start;
+	/* .ax-box 처럼, 바깥까지 칠해지는 테두리만큼 되민다 */
+	margin: var(--px);
 	padding: calc(var(--px) * 1) calc(var(--px) * 3);
 	background: var(--ax-pale);
 	color: var(--ax-ink);
@@ -435,6 +437,7 @@ body.player {
 }
 
 .ax-me__tag {
+	margin: var(--px);
 	padding: 0 calc(var(--px) * 2);
 	background: var(--ax-blue);
 	color: var(--ax-white);
@@ -531,7 +534,7 @@ body.player {
 	margin: 0;
 	color: var(--ax-lime);
 	font-size: calc(var(--fp5) * 12);
-	animation: ax-pop 360ms steps(4) both;
+	animation: ax-pop 360ms steps(4, jump-none) both;
 }
 
 .ax-verdict__points small {
@@ -683,7 +686,7 @@ body.player {
 	text-shadow:
 		var(--fp3) var(--fp3) 0 var(--ax-red),
 		calc(var(--fp3) * 2) calc(var(--fp3) * 2) 0 var(--ax-ink);
-	animation: ax-pop 300ms steps(4) both;
+	animation: ax-pop 300ms steps(4, jump-none) both;
 }
 
 .ax-ready {
@@ -707,7 +710,7 @@ body.player {
 	gap: calc(var(--px) * 2);
 	padding: calc(var(--px) * 5) calc(var(--px) * 8);
 	text-align: center;
-	animation: ax-pop 260ms steps(3) both;
+	animation: ax-pop 260ms steps(3, jump-none) both;
 }
 
 .ax-done p {
@@ -746,7 +749,8 @@ body.player {
 /* 4버튼 패드(controller.ts 의 .pad 를 덮어쓴다) */
 .ax-play .pad {
 	gap: calc(var(--px) * 4);
-	padding: calc(var(--px) * 4) 14px calc(var(--px) * 6);
+	/* 좌우는 .play__top·.ax-hint 와 같아야 한 화면 안에서 줄이 맞는다 */
+	padding: calc(var(--px) * 4) 12px calc(var(--px) * 6);
 }
 
 .ax-play .pad__btn {
@@ -837,7 +841,8 @@ body.host {
 }
 
 .host #controls {
-	padding: calc(var(--hp) * 4) calc(var(--hp) * 8);
+	/* 좌우는 #stage 와 같아야 본문과 아래 버튼의 줄이 맞는다 */
+	padding: calc(var(--hp) * 4) calc(var(--hp) * 14);
 	border-top: var(--hp) solid var(--ax-ink);
 	background: var(--ax-night);
 }
@@ -979,7 +984,7 @@ body.host {
 .ax-chip.is-claimed {
 	background: var(--ax-pale);
 	color: var(--ax-ink);
-	animation: ax-pop 260ms steps(3) both;
+	animation: ax-pop 260ms steps(3, jump-none) both;
 }
 
 .ax-chip.is-selected {
@@ -1045,7 +1050,8 @@ body.host {
 .ax-plan {
 	display: flex;
 	flex-wrap: wrap;
-	gap: calc(var(--hp) * 3);
+	/* 타일이 테두리만큼 margin 으로 되밀려 있어 사이는 그만큼 좁게 둔다 */
+	gap: var(--hp);
 	margin: 0;
 	padding: 0;
 	list-style: none;
@@ -1055,6 +1061,7 @@ body.host {
 	display: grid;
 	justify-items: center;
 	gap: var(--hp);
+	margin: var(--hp);
 	padding: calc(var(--hp) * 2);
 	background: var(--ax-night-2);
 	box-shadow: 0 0 0 var(--hp) var(--ax-ink);
@@ -1219,11 +1226,14 @@ body.host {
 	grid-template-columns: calc(var(--hp) * 22) minmax(0, 1fr) auto auto;
 	align-items: center;
 	gap: calc(var(--hp) * 3);
+	/* 테두리가 바깥까지 칠해지는 만큼 좌우로 되민다(세로는 줄 수가 많아 그대로 둔다) */
+	margin: 0 calc(var(--hp) / 2);
 	padding: var(--hp) calc(var(--hp) * 3);
 	background: var(--ax-night-2);
 	box-shadow: 0 0 0 calc(var(--hp) / 2) var(--ax-ink);
 	font-size: calc(var(--hp) * 12);
-	animation: ax-reveal 240ms steps(3) both;
+	/* jump-none 이라야 마지막 칸이 제자리다. 기본 steps() 는 100% 직전까지 한 칸 못 와서 밀린 채로 끝난다 */
+	animation: ax-reveal 240ms steps(3, jump-none) both;
 	animation-delay: calc(300ms + var(--order, 0) * 110ms);
 }
 
@@ -1317,7 +1327,7 @@ body.host {
 	justify-items: center;
 	gap: calc(var(--hp) * 2);
 	text-align: center;
-	animation: ax-rise 500ms steps(5) both;
+	animation: ax-rise 500ms steps(5, jump-none) both;
 }
 
 .ax-podium__place--3 {
@@ -1424,6 +1434,8 @@ body.host {
 
 .ax-editor textarea,
 .ax-gate input {
+	/* 테두리가 바깥까지 칠해지는 만큼 좌우로 되민다(세로는 칸이 빠듯해 그대로 둔다) */
+	margin: 0 var(--hp);
 	padding: calc(var(--hp) * 3);
 	border: 0;
 	background: var(--ax-ink);
@@ -1696,6 +1708,8 @@ body.host {
 .ax-intro-stage__demo {
 	width: calc(var(--hp) * 130);
 	height: min(calc(var(--hp) * 235), 74vh);
+	/* .ax-demo 의 테두리가 6px 바깥까지 칠해진다. 폰(.ax-intro__demo)과 같게 되민다 */
+	margin: 6px;
 }
 
 /* ---------- 개발용 미리보기 ---------- */
